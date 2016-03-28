@@ -57,8 +57,6 @@ public:
         hashBestBlock_ = hashBlock;
         return true;
     }
-
-    bool GetStats(CCoinsStats& stats) const { return false; }
 };
 }
 
