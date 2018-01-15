@@ -86,7 +86,7 @@ public:
     bool Erase(const std::vector<unsigned char>& key) override { return db.Erase(key, true); }
     bool Read(const std::vector<unsigned char>& key, std::vector<unsigned char>& value) override { return db.Read(key, value); }
     std::unique_ptr<CStorageKVIterator> NewIterator() override {
-        return MakeUnique<CStorageLevelDBIterator>(std::unique_ptr<leveldb::Iterator>(db.NewIterator()));
+        return MakeUnique<CStorageLevelDBIterator>(std::unique_ptr<leveldb::Iterator>(db.NewRawIterator()));
     }
 private:
     CLevelDBWrapper db;

@@ -206,7 +206,7 @@ bool CBlockTreeDB::LoadBlockIndexGuts()
 {
     boost::scoped_ptr<CLevelDBIterator> pcursor(NewIterator());
 
-    pcursor->Seek(make_pair('b', uint256()));
+    pcursor->Seek(std::make_pair('b', uint256()));
 
     // Load mapBlockIndex
     uint256 nPreviousCheckpoint;
