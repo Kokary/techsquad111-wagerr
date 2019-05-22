@@ -36,6 +36,10 @@ import shutil
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import *
 
+from time import sleep
+
+import subprocess
+
 class WalletBackupTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 4
@@ -96,19 +100,19 @@ class WalletBackupTest(BitcoinTestFramework):
 
     def run_test(self):
         self.log.info("Generating initial blockchain")
-        self.nodes[0].generate(1)
+        self.nodes[0].generate(2)
         sync_blocks(self.nodes)
         self.nodes[1].generate(1)
         sync_blocks(self.nodes)
         self.nodes[2].generate(1)
         sync_blocks(self.nodes)
-        self.nodes[3].generate(100)
+        self.nodes[3].generate(101)
         sync_blocks(self.nodes)
 
-        assert_equal(self.nodes[0].getbalance(), 250)
-        assert_equal(self.nodes[1].getbalance(), 250)
-        assert_equal(self.nodes[2].getbalance(), 250)
-        assert_equal(self.nodes[3].getbalance(), 0)
+        assert_equal(self.nodes[0].getbalance(), 173360471)
+        assert_equal(self.nodes[1].getbalance(), 250000)
+        assert_equal(self.nodes[2].getbalance(), 250000)
+        assert_equal(self.nodes[3].getbalance(), 250000)
 
         self.log.info("Creating transactions")
         # Five rounds of sending each other transactions.
@@ -140,7 +144,7 @@ class WalletBackupTest(BitcoinTestFramework):
 
         # At this point, there are 214 blocks (103 for setup, then 10 rounds, then 101.)
         # 114 are mature, so the sum of all wallets should be 114 * 250 = 28500.
-        assert_equal(total, 28500)
+        assert_equal(total, 201860471)
 
         ##
         # Test restoring spender wallets from backups
@@ -198,6 +202,8 @@ class WalletBackupTest(BitcoinTestFramework):
             tmpdir + "/node0/regtest"]
 
         for sourcePath in sourcePaths:
+            subprocess.check_call(['ls', '-l', sourcePath])
+            self.log.info("Source Path %s" % sourcePath)
             assert_raises_rpc_error(-4, "backup failed", self.nodes[0].backupwallet, sourcePath)
 
 
