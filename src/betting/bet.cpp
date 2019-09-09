@@ -20,6 +20,7 @@
 #define CGR_OP_STRLEN 10
 #define PSE_OP_STRLEN 34
 #define PTE_OP_STRLEN 34
+#define PEP_OP_STRLEN 22
 
 
 /**
@@ -952,6 +953,86 @@ void SetEventTotalOdds (CPeerlessTotalsEvent totalsEvent) {
     }
 }
 
+/**
+ * Split a CPeerlessEventPatch OpCode string into byte components and update a peerless
+ * event object.
+ *
+ * @param opCode  The CPeerlessEventPatch OpCode string
+ * @param pe      The CPeerlessEventPatch object
+ * @return        Bool
+ */
+bool CPeerlessEventPatch::FromOpCode(std::string opCode, CPeerlessEventPatch &pe)
+{
+    // Ensure PeerlessEventPatch OpCode string is the correct length.
+    if (opCode.length() != PEP_OP_STRLEN / 2) {
+        // TODO - add proper error handling
+        return false;
+    }
+
+    // Ensure the PeerlessEventPatch transaction type is correct.
+    if (opCode[2] != plEventPatchTxType) {
+        // TODO - add proper error handling
+        return false;
+    }
+
+    // Ensure the PeerlessEventPatch OpCode has the correct BTX format version number.
+    if (ReadBTXFormatVersion(opCode) != BTX_FORMAT_VERSION) {
+        // TODO - add proper error handling
+        return false;
+    }
+
+    // Parse the OPCODE hex data.
+    pe.nEventId    = FromChars(opCode[3], opCode[4], opCode[5], opCode[6]);
+    pe.nStartTime  = FromChars(opCode[7], opCode[8], opCode[9], opCode[10]);
+
+    return true;
+}
+
+/**
+ * Convert CPeerlessEventPatch object data into hex OPCode string.
+ *
+ * @param pe     The CPeerlessEventPatch object
+ * @param opCode The CPeerlessEventPatch OpCode string
+ * @return       Bool
+ */
+bool CPeerlessEventPatch::ToOpCode(CPeerlessEventPatch pe, std::string &opCode)
+{
+    std::string sEventId    = ToHex(pe.nEventId, 8);
+    std::string sStartTime  = ToHex(pe.nStartTime,  8);
+
+    opCode = BTX_HEX_PREFIX "010b" + sEventId + sStartTime;
+
+    // Ensure PeerlessEventPatch OpCode string is the correct length.
+    if (opCode.length() != PEP_OP_STRLEN) {
+        // TODO - add proper error handling
+        return false;
+    }
+
+    return true;
+}
+
+
+/**
+ * Updates a peerless event object with new values.
+ */
+void ApplyEventPatch (CPeerlessEventPatch plEventPatch) {
+    CEventDB edb;
+    eventIndex_t eventIndex;
+    edb.GetEvents(eventIndex);
+
+    // First check a peerless event exists in the event index.
+    if (eventIndex.count(plEventPatch.nEventId) > 0) {
+
+        // Get the event object from the index and update the totals odds values.
+        CPeerlessEvent plEvent = eventIndex.find(plEventPatch.nEventId)->second;
+
+        plEvent.nStartTime = plEventPatch.nStartTime;
+
+        // Update the event in the event index.
+        eventIndex[plEventPatch.nEventId] = plEvent;
+        CEventDB::SetEvents(eventIndex);
+    }
+}
 
 /**
  * Updates a peerless event object with total bet accumulators.

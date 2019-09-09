@@ -4955,6 +4955,12 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
                             eiUpdated = true;
                         }
 
+                        CPeerlessEventPatch plEventPatch;
+                        if (CPeerlessEventPatch::FromOpCode(opCode, plEventPatch)) {
+                            ApplyEventPatch(plEventPatch);
+                            eiUpdated = true;
+                        }
+
                         // If results found in block remove event from event index and add result to result index.
                         CPeerlessResult plResult;
                         if (CPeerlessResult::FromOpCode(opCode, plResult)) {

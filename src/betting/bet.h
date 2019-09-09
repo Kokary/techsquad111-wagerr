@@ -49,7 +49,8 @@ typedef enum BetTxTypes{
     cgBetTxType          = 0x07,  // Chain games bet transaction type identifier.
     cgResultTxType       = 0x08,  // Chain games result transaction type identifier.
     plSpreadsEventTxType = 0x09,  // Spread odds transaction type identifier.
-    plTotalsEventTxType  = 0x0a   // Totals odds transaction type identifier.
+    plTotalsEventTxType  = 0x0a,  // Totals odds transaction type identifier.
+    plEventPatchTxType   = 0x0b   // Peerless event patch transaction type identifier.
 } BetTxTypes;
 
 // The supported mapping TX types.
@@ -356,6 +357,29 @@ public:
     static bool FromOpCode(std::string opCode, CPeerlessTotalsEvent &pte);
 };
 
+class CPeerlessEventPatch
+{
+public:
+    int nVersion;
+    uint32_t nEventId;
+    uint64_t nStartTime;
+
+    CPeerlessEventPatch() {}
+
+    static bool ToOpCode(CPeerlessEventPatch pe, std::string &opCode);
+    static bool FromOpCode(std::string opCode, CPeerlessEventPatch &pe);
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp (Stream& s, Operation ser_action, int nType, int nVersion) {
+        READWRITE(this->nVersion);
+        nVersion = this->nVersion;
+        READWRITE(nEventId);
+        READWRITE(nStartTime);
+    }
+};
+
 class CMapping
 {
 public:
@@ -502,6 +526,9 @@ void SetEventSpreadOdds(CPeerlessSpreadsEvent sEventOdds);
 
 /** Set a peerless event total odds **/
 void SetEventTotalOdds(CPeerlessTotalsEvent tEventOdds);
+
+/** Set a peerless event new values **/
+void ApplyEventPatch(CPeerlessEventPatch plEventPatch);
 
 /** Set a peerless event money line odds **/
 void SetEventMLOdds(CPeerlessUpdateOdds mEventOdds);
