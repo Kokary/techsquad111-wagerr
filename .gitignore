@@ -15,6 +15,7 @@ src/test/test_wagerr
 src/qt/test/test_wagerr-qt
 
 # autoreconf
+Makefile.am.user
 Makefile.in
 aclocal.m4
 autom4te.cache/
@@ -159,3 +160,4 @@ stage/
 # datadir
 datadir/
 datadir*/
+
