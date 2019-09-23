@@ -70,25 +70,27 @@ UniValue listevents(const UniValue& params, bool fHelp)
             "\nExamples:\n" +
             HelpExampleCli("listevents", "") + HelpExampleRpc("listevents", ""));
 
-    CEventDB edb;
-    eventIndex_t eventsIndex;
+    CEventDB edb{};
+    CMappingDB dbMapping{};
+    eventIndex_t eventsIndex{};
+    mappingIndex_t sportsIndex{};
+    mappingIndex_t roundsIndex{};
+    mappingIndex_t teamsIndex{};
+    mappingIndex_t tournamentsIndex{};
     edb.GetEvents(eventsIndex);
 
-    mappingIndex_t sportsIndex;
-    CMappingDB msdb("sports.dat");
-    msdb.GetSports(sportsIndex);
-
-    mappingIndex_t roundsIndex;
-    CMappingDB mrdb("rounds.dat");
-    mrdb.GetRounds(roundsIndex);
-
-    mappingIndex_t teamsIndex;
-    CMappingDB mtdb("teams.dat");
-    mtdb.GetTeams(teamsIndex);
-
-    mappingIndex_t tournamentsIndex;
-    CMappingDB mtodb("tournaments.dat");
-    mtodb.GetTournaments(tournamentsIndex);
+    if (!dbMapping.Read(sportMapping, sportsIndex)) {
+        throw runtime_error("No sports mapping found");
+    }
+    if (!dbMapping.Read(roundMapping, roundsIndex)) {
+        throw runtime_error("No rounds mapping found");
+    }
+    if (!dbMapping.Read(teamMapping, teamsIndex)) {
+        throw runtime_error("No teams mapping found");
+    }
+    if (!dbMapping.Read(tournamentMapping, tournamentsIndex)) {
+        throw runtime_error("No tournaments mapping found");
+    }
 
     string sportFilter = "";
 
@@ -304,16 +306,18 @@ UniValue listbets(const UniValue& params, bool fHelp)
     const CWallet::TxItems & txOrdered = pwalletMain->wtxOrdered;
 
     CEventDB edb;
+    CMappingDB dbMapping{};
     eventIndex_t eventIndex;
+    mappingIndex_t teamsIndex;
+    mappingIndex_t tournamentsIndex;
     edb.GetEvents(eventIndex);
 
-    mappingIndex_t teamsIndex;
-    CMappingDB mtdb("teams.dat");
-    mtdb.GetTeams(teamsIndex);
-
-    mappingIndex_t tournamentsIndex;
-    CMappingDB mtodb("tournaments.dat");
-    mtodb.GetTournaments(tournamentsIndex);
+    if (!dbMapping.Read(teamMapping, teamsIndex)) {
+        throw runtime_error("No teams mapping found");
+    }
+    if (!dbMapping.Read(tournamentMapping, tournamentsIndex)) {
+        throw runtime_error("No tournaments mapping found");
+    }
 
     // iterate backwards until we have nCount items to return:
     for (CWallet::TxItems::const_reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it) {

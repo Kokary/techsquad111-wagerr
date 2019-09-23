@@ -40,43 +40,25 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
                 "\nExamples:\n" +
                 HelpExampleCli("getmappingid", "") + HelpExampleRpc("getmappingid", ""));
 
+    CMappingDB dbMapping{};
+    mappingIndex_t mappingIndex{};
     std::string mIndex = params[0].get_str();
     std::string name   = params[1].get_str();
-    bool mappingFound  = false;
-    uint32_t type      = 0;
-
     UniValue ret(UniValue::VARR);
     UniValue mapping(UniValue::VOBJ);
+    const MappingTypes type = CMapping::FromTypeName(mIndex);
 
-    mappingIndex_t mappingIndex;
-
-    // Select the map we want to look up based on user input.
-    if (mIndex == "sports") {
-        CMappingDB cmdb("sports.dat");
-        cmdb.GetSports(mappingIndex);
-        type = sportMapping;
-    }
-    else if (mIndex == "rounds") {
-        CMappingDB cmdb("rounds.dat");
-        cmdb.GetRounds(mappingIndex);
-        type = roundMapping;
-    }
-    else if (mIndex == "teamnames") {
-        CMappingDB cmdb("teams.dat");
-        cmdb.GetTeams(mappingIndex);
-        type = teamMapping;
-    }
-    else if (mIndex == "tournaments") {
-        CMappingDB cmdb("tournaments.dat");
-        cmdb.GetTournaments(mappingIndex);
-        type = tournamentMapping;
-    }
-    else{
+    if (CMapping::ToTypeName(type) != mIndex) {
         throw runtime_error("No mapping exist for the mapping index you provided.");
+    }
+
+    if (!dbMapping.Read(type, mappingIndex)) {
+        throw runtime_error("No mapping saved for the mapping type you provided.");
     }
 
     // Check the map for the string name.
     unsigned int nFirstIndexFree = 0;
+    bool mappingFound  = false;
     bool FirstIndexFreeFound = false;
     map<uint32_t, CMapping>::iterator it;
     for (it = mappingIndex.begin(); it != mappingIndex.end(); it++) {
@@ -101,27 +83,13 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
 
     // If no mapping found then create a new one and add to the given map index.
     if (!mappingFound) {
-        CMapping cm;
-        cm.nMType = type;
-        cm.nId = nFirstIndexFree;
-        cm.sName = name;
+        CMapping cm{};
+        cm.nMType   = type;
+        cm.nId      = nFirstIndexFree;
+        cm.sName    = name;
         cm.nVersion = 1;
 
-        CMappingDB cmdb;
-
-        if (mIndex == "sports") {
-            cmdb.AddSport(cm);
-        }
-        else if (mIndex == "rounds") {
-            cmdb.AddRound(cm);
-        }
-        else if (mIndex == "teamnames") {
-            cmdb.AddTeam(cm);
-        }
-        else if (mIndex == "tournaments") {
-            cmdb.AddTournament(cm);
-        }
-
+        dbMapping.Save(cm);
         mapping.push_back(Pair("mapping-id",  (uint64_t) nFirstIndexFree));
         mapping.push_back(Pair("exists", false));
         mapping.push_back(Pair("mapping-index", mIndex));
@@ -159,38 +127,24 @@ UniValue getmappingname(const UniValue& params, bool fHelp)
                 "\nExamples:\n" +
                 HelpExampleCli("getmappingname", "") + HelpExampleRpc("getmappingname", ""));
 
+    CMappingDB dbMapping{};
+    mappingIndex_t mappingIndex{};
     std::string mIndex = params[0].get_str();
     uint32_t id        = std::stoi(params[1].get_str());
-
-    bool mappingFound = false;
-    mappingIndex_t mappingIndex;
-    CMappingDB cmdb;
-
     UniValue ret(UniValue::VARR);
     UniValue mapping(UniValue::VOBJ);
+    const MappingTypes type = CMapping::FromTypeName(mIndex);
 
-    // Select the map we want to look up based on user input.
-    if (mIndex == "sports") {
-        CMappingDB cmdb("sports.dat");
-        cmdb.GetSports(mappingIndex);
+    if (CMapping::ToTypeName(type) != mIndex) {
+        throw runtime_error("No mapping exist for the mapping index you provided.");
     }
-    else if (mIndex == "rounds") {
-        CMappingDB cmdb("rounds.dat");
-        cmdb.GetRounds(mappingIndex);
-    }
-    else if (mIndex == "teamnames") {
-        CMappingDB cmdb("teams.dat");
-        cmdb.GetTeams(mappingIndex);
-    }
-    else if (mIndex == "tournaments") {
-        CMappingDB cmdb("tournaments.dat");
-        cmdb.GetTournaments(mappingIndex);
-    }
-    else{
-        throw runtime_error("Currently no mapping index exists for the mapping index you provided.");
+
+    if (!dbMapping.Read(type, mappingIndex)) {
+        throw runtime_error("No mapping saved for the mapping type you provided.");
     }
 
     // Check the map for the mapping ID.
+    bool mappingFound = false;
     map<uint32_t, CMapping>::iterator it;
     for (it = mappingIndex.begin(); it != mappingIndex.end(); it++) {
         if (it->first == id) {

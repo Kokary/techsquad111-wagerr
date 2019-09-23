@@ -4907,6 +4907,7 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
         return state.Abort(std::string("System error: ") + e.what());
     }
 
+    CMappingDB dbMapping{};
     bool eiUpdated = false;
     // Look through the block for any events, results or mapping TX.
     if (pindex->nHeight > Params().BetStartHeight()) {
@@ -4991,36 +4992,9 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
                         }
 
                         // If mapping found then add it to the relating map index and write the map index to disk.
-                        CMapping cMapping;
-                        if (CMapping::FromOpCode(opCode, cMapping)) {
-                            if (cMapping.nMType == sportMapping) {
-                                CMappingDB::AddSport(cMapping);
-
-                                mappingIndex_t sportsIndex;
-                                CMappingDB mdb("sports.dat");
-                                mdb.Write(sportsIndex, block.GetHash());
-                            }
-                            else if (cMapping.nMType == roundMapping) {
-                                CMappingDB::AddRound(cMapping);
-
-                                mappingIndex_t roundsIndex;
-                                CMappingDB mdb("rounds.dat");
-                                mdb.Write(roundsIndex, block.GetHash());
-                            }
-                            else if (cMapping.nMType == teamMapping) {
-                                CMappingDB::AddTeam(cMapping);
-
-                                mappingIndex_t teamsIndex;
-                                CMappingDB mdb("teams.dat");
-                                mdb.Write(teamsIndex, block.GetHash());
-                            }
-                            else if (cMapping.nMType == tournamentMapping) {
-                                CMappingDB::AddTournament(cMapping);
-
-                                mappingIndex_t tournamentsIndex;
-                                CMappingDB mdb("tournaments.dat");
-                                mdb.Write(tournamentsIndex, block.GetHash());
-                            }
+                        CMapping mapping;
+                        if (CMapping::FromOpCode(opCode, mapping)) {
+                            dbMapping.Save(mapping);
                         }
                     }
                 }

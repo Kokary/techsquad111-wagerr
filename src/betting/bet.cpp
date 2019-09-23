@@ -7,6 +7,8 @@
 
 #include "wallet/wallet.h"
 
+static constexpr std::size_t dbWrapperCacheSize{10 << 20};
+
 #define BTX_FORMAT_VERSION 0x01
 #define BTX_HEX_PREFIX "42"
 
@@ -1127,6 +1129,43 @@ void SetEventAccummulators (CPeerlessBet plBet, CAmount betAmount) {
 
 }
 
+MappingTypes CMapping::GetType() const
+{
+    return static_cast<MappingTypes>(nMType);
+}
+
+std::string CMapping::ToTypeName(MappingTypes type)
+{
+    switch (type) {
+    case sportMapping:
+        return "sports";
+    case roundMapping:
+        return "rounds";
+    case teamMapping:
+        return "teams";
+    case tournamentMapping:
+        return "tournaments";
+    }
+    return "";
+}
+
+MappingTypes CMapping::FromTypeName(const std::string& name)
+{
+    if (name == ToTypeName(sportMapping)) {
+        return sportMapping;
+    }
+    if (name == ToTypeName(roundMapping)) {
+        return roundMapping;
+    }
+    if (name == ToTypeName(teamMapping)) {
+        return teamMapping;
+    }
+    if (name == ToTypeName(tournamentMapping)) {
+        return tournamentMapping;
+    }
+    return static_cast<MappingTypes>(-1);
+}
+
 /**
  * Split a CMapping OpCode string into byte components and store in CMapping object.
  *
@@ -1134,6 +1173,7 @@ void SetEventAccummulators (CPeerlessBet plBet, CAmount betAmount) {
  * @param cm     The CMapping object.
  * @return       Bool
  */
+
 bool CMapping::FromOpCode(std::string opCode, CMapping &cm)
 {
     // Ensure the mapping transaction type is correct.
@@ -1178,258 +1218,49 @@ bool CMapping::FromOpCode(std::string opCode, CMapping &cm)
 /**
  * Constructor for the CMapping database object.
  */
-CMappingDB::CMappingDB(std::string fileName)
+CMappingDB::CMappingDB() :
+    db{"mapping.dat", dbWrapperCacheSize}
 {
-    mDBFileName = fileName;
-    mFilePath   = GetDataDir() / fileName;
 }
 
-/** Global mapping indexes to store sports, rounds, team names and tournaments. **/
-mappingIndex_t CMappingDB::mSportsIndex;
-mappingIndex_t CMappingDB::mRoundsIndex;
-mappingIndex_t CMappingDB::mTeamsIndex;
-mappingIndex_t CMappingDB::mTournamentsIndex;
-
-CCriticalSection CMappingDB::cs_setSports;
-CCriticalSection CMappingDB::cs_setRounds;
-CCriticalSection CMappingDB::cs_setTeams;
-CCriticalSection CMappingDB::cs_setTournaments;
-
-/**
- * Returns then global sports index.
- *
- * @param sportsIndex
- */
-void CMappingDB::GetSports(mappingIndex_t &sportsIndex)
+bool CMappingDB::Save(const CMapping& mapping)
 {
-    LOCK(cs_setSports);
-    sportsIndex = mSportsIndex;
-}
-
-/**
- * Set the current sports index.
- *
- * @param sportsIndex
- */
-void CMappingDB::SetSports(const mappingIndex_t &sportsIndex)
-{
-    LOCK(cs_setSports);
-    mSportsIndex = sportsIndex;
-}
-
-/**
- * Add a sport to the sports index.
- *
- * @param sm  Sport mapping object.
- */
-void CMappingDB::AddSport(const CMapping sm)
-{
-    LOCK(cs_setSports);
-    mSportsIndex.insert(make_pair(sm.nId, sm));
-}
-
-/**
- * Return the current rounds index.
- *
- * @param roundsIndex  Rounds mapping index.
- */
-void CMappingDB::GetRounds(mappingIndex_t &roundsIndex)
-{
-    LOCK(cs_setRounds);
-    roundsIndex = mRoundsIndex;
-}
-
-/**
- * Set the current rounds index.
- *
- * @param roundsIndex  Rounds mapping index.
- */
-void CMappingDB::SetRounds(const mappingIndex_t &roundsIndex)
-{
-    LOCK(cs_setRounds);
-    mRoundsIndex = roundsIndex;
-}
-
-/**
- * Add a round object to the rounds index.
- *
- * @param rm  Rounds mapping object.
- */
-void CMappingDB::AddRound(const CMapping rm)
-{
-    LOCK(cs_setRounds);
-    mRoundsIndex.insert(make_pair(rm.nId, rm));
-}
-
-/**
- * Returns the current teams index.
- *
- * @param teamsIndex  Teams mapping index.
- */
-void CMappingDB::GetTeams(mappingIndex_t &teamsIndex)
-{
-    LOCK(cs_setTeams);
-    teamsIndex = mTeamsIndex;
-}
-
-/**
- * Set the current teams index.
- *
- * @param teamsIndex  Teams mapping object.
- */
-void CMappingDB::SetTeams(const mappingIndex_t &teamsIndex)
-{
-    LOCK(cs_setTeams);
-    mTeamsIndex = teamsIndex;
-}
-
-/**
- * Add a team object to the teams index.
- *
- * @param tm Teams mapping object.
- */
-void CMappingDB::AddTeam(const CMapping tm)
-{
-    LOCK(cs_setTeams);
-    mTeamsIndex.insert(make_pair(tm.nId, tm));
-}
-
-/**
- * Return the current tournaments index.
- *
- * @param tournamentsIndex  Tournaments mapping index.
- */
-void CMappingDB::GetTournaments(mappingIndex_t &tournamentsIndex)
-{
-    LOCK(cs_setTournaments);
-    tournamentsIndex = mTournamentsIndex;
-}
-
-/**
- * Set the current tournaments index.
- *
- * @param tournamentsIndex  Tournaments mapping index.
- */
-void CMappingDB::SetTournaments(const mappingIndex_t &tournamentsIndex)
-{
-    LOCK(cs_setTournaments);
-    mTournamentsIndex = tournamentsIndex;
-}
-
-/**
- * Adds a tournament object to the tournaments index.
- *
- * @param tm Tournament mapping object.
- */
-void CMappingDB::AddTournament(const CMapping tm)
-{
-    LOCK(cs_setTournaments);
-    mTournamentsIndex.insert(make_pair(tm.nId, tm));
+    mappingIndex_t mappingIndex;
+    if (Read(mapping.GetType(), mappingIndex)) {
+        mappingIndex[mapping.nId] = mapping;
+        return Write(mapping.GetType(), mappingIndex);
+    }
+    return false;
 }
 
 /**
  * Serialise a mapping index map into binary format and write to the related .dat file.
  *
+ * @param blockHash       The block hash which we can use a reference as to when data was last saved.
+ * @param mappingName     The name of Wagerr mapping.
  * @param mappingIndex    The index map which contains Wagerr mappings.
- * @param latestBlockHash The latest block hash which we can use a reference as to when data was last saved to the file.
  * @return                Bool
  */
-bool CMappingDB::Write(const mappingIndex_t& mappingIndex, uint256 latestBlockHash)
+bool CMappingDB::Write(const MappingTypes mappingType, const mappingIndex_t& mappingIndex)
 {
-    // Generate random temporary filename.
-    unsigned short randv = 0;
-    GetRandBytes((unsigned char*)&randv, sizeof(randv));
-    std::string tmpfn = strprintf( mDBFileName + ".%04x", randv);
-
-    // Serialize map index object and latest block hash as a reference.
-    CDataStream ssMappings(SER_DISK, CLIENT_VERSION);
-    ssMappings << latestBlockHash;
-    ssMappings << mappingIndex;
-
-    // Checksum added for verification purposes.
-    uint256 hash = Hash(ssMappings.begin(), ssMappings.end());
-    ssMappings << hash;
-
-    // Open output file, and associate with CAutoFile.
-    boost::filesystem::path pathTemp = GetDataDir() / tmpfn;
-    FILE* file = fopen(pathTemp.string().c_str(), "wb");
-    CAutoFile fileout(file, SER_DISK, CLIENT_VERSION);
-
-    if (fileout.IsNull())
-        return error("%s : Failed to open file %s", __func__, pathTemp.string());
-
-    // Write and commit data.
-    try {
-        fileout << ssMappings;
-    }
-    catch (std::exception& e) {
-        return error("%s : Serialize or I/O error - %s", __func__, e.what());
-    }
-
-    FileCommit(fileout.Get());
-    fileout.fclose();
-
-    // Replace existing .dat, if any, with new .dat.XXXX
-    if (!RenameOver(pathTemp, mFilePath))
-        return error("%s: Rename-into-place failed", __func__);
-
-    return true;
+    return db.Write(mappingType, mappingIndex);
 }
+
 
 /**
- * Reads a .dat file and deserializes the data to recreate an index map object.
- *
- * @param mappingIndex The index map which will be populated with data from the file.
- * @return             Bool
- */
-bool CMappingDB::Read(mappingIndex_t& mappingIndex, uint256& lastBlockHash)
+* Reads a .dat file and deserializes the data to recreate an index map object.
+*
+* @param blockHash       The block hash which we can use a reference as to when data was last saved.
+* @param mappingName     The name of Wagerr mapping.
+* @param mappingIndex    The index map which contains Wagerr mappings.
+* @return                Bool
+*/
+bool CMappingDB::Read(MappingTypes mappingType, mappingIndex_t& mappingIndex)
 {
-    // Open input file, and associate with CAutoFile.
-    FILE* file = fopen(mFilePath.string().c_str(), "rb");
-    CAutoFile filein(file, SER_DISK, CLIENT_VERSION);
-
-    if (filein.IsNull())
-        return error("%s : Failed to open file %s", __func__, mFilePath.string());
-
-    // Use file size to size memory buffer.
-    uint64_t fileSize = boost::filesystem::file_size(mFilePath);
-    uint64_t dataSize = fileSize - sizeof(uint256);
-
-    // Don't try to resize to a negative number if file is small.
-    if (fileSize >= sizeof(uint256))
-        dataSize = fileSize - sizeof(uint256);
-
-    vector<unsigned char> vchData;
-    vchData.resize(dataSize);
-    uint256 hashIn;
-
-    // Read data and checksum from file.
-    try {
-        filein.read((char*)&vchData[0], dataSize);
-        filein >> hashIn;
-    }
-    catch (std::exception& e) {
-        return error("%s : Deserialize or I/O error - %s", __func__, e.what());
-    }
-
-    filein.fclose();
-    CDataStream ssMappings(vchData, SER_DISK, CLIENT_VERSION);
-
-    // Verify stored checksum matches input data.
-    uint256 hashTmp = Hash(ssMappings.begin(), ssMappings.end());
-    if (hashIn != hashTmp)
-        return error("%s : Checksum mismatch, data corrupted", __func__);
-
-    try {
-        ssMappings >> lastBlockHash;
-        ssMappings >> mappingIndex;
-    }
-    catch (std::exception& e) {
-        return error("%s : Deserialize or I/O error - %s", __func__, e.what());
-    }
-
-    return true;
+   return db.Read(mappingType, mappingIndex);
 }
+
+
 
 /**
  * Constructor for the events database object.

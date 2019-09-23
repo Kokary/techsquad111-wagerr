@@ -7,9 +7,12 @@
 
 #include "util.h"
 #include "chainparams.h"
+#include "leveldbwrapper.h"
 
 #include <boost/filesystem/path.hpp>
 #include <map>
+
+class CLevelDBWrapper;
 
 // The supported bet outcome types.
 typedef enum OutcomeType {
@@ -392,6 +395,11 @@ public:
     // Default Constructor.
     CMapping() {}
 
+    MappingTypes GetType() const;
+
+    static std::string ToTypeName(MappingTypes type);
+    static MappingTypes FromTypeName(const std::string& name);
+
     static bool ToOpCode(CMapping &mapping, std::string &opCode);
     static bool FromOpCode(std::string opCode, CMapping &mapping);
 
@@ -412,47 +420,16 @@ typedef std::map<uint32_t, CMapping> mappingIndex_t;
 
 class CMappingDB
 {
-protected:
-    // Global variables that stores the different Wagerr mappings.
-    static mappingIndex_t mSportsIndex;
-    static mappingIndex_t mRoundsIndex;
-    static mappingIndex_t mTeamsIndex;
-    static mappingIndex_t mTournamentsIndex;
-
-    static CCriticalSection cs_setSports;
-    static CCriticalSection cs_setRounds;
-    static CCriticalSection cs_setTeams;
-    static CCriticalSection cs_setTournaments;
-
 private:
-    std::string mDBFileName;
-    boost::filesystem::path mFilePath;
+    CLevelDBWrapper db;
 
 public:
-    // Default constructor.
-    CMappingDB() {}
-
     // Parametrized Constructor.
-    CMappingDB(std::string fileName);
+    explicit CMappingDB();
 
-    bool Write(const mappingIndex_t& mappingIndex,  uint256 latestBlockHash);
-    bool Read(mappingIndex_t& mappingIndex, uint256& lastBlockHash);
-
-    static void GetSports(mappingIndex_t &sportsIndex);
-    static void SetSports(const mappingIndex_t &sportsIndex);
-    static void AddSport(CMapping sm);
-
-    static void GetRounds(mappingIndex_t &roundsIndex);
-    static void SetRounds(const mappingIndex_t &roundsIndex);
-    static void AddRound(CMapping rm);
-
-    static void GetTeams(mappingIndex_t &teamsIndex);
-    static void SetTeams(const mappingIndex_t &teamsIndex);
-    static void AddTeam(CMapping ts);
-
-    static void GetTournaments(mappingIndex_t &tournamentsIndex);
-    static void SetTournaments(const mappingIndex_t &tournamentsIndex);
-    static void AddTournament(CMapping ts);
+    bool Save(const CMapping& mapping);
+    bool Write(const MappingTypes mappingType, const mappingIndex_t& mappingIndex);
+    bool Read(const MappingTypes mappingType, mappingIndex_t& mappingIndex);
 };
 
 // Define new map type to store Wagerr events.
