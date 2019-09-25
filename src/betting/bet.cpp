@@ -25,6 +25,24 @@ static constexpr std::size_t dbWrapperCacheSize{10 << 20};
 #define PEP_OP_STRLEN 22
 
 
+std::string MakeDbPath(const char* name)
+{
+    using namespace boost::filesystem;
+
+    std::string result{};
+    path dir{"betting"};
+
+    dir /= name;
+
+    if (is_directory(dir) || create_directories(dir) ) {
+        result = boost::to_string(dir);
+        result.erase(0, 1);
+        result.erase(result.size() - 1);
+    }
+
+    return result;
+}
+
 /**
  * Validate the transaction to ensure it has been posted by an oracle node.
  *
@@ -595,13 +613,12 @@ bool CPeerlessUpdateOdds::ToOpCode(CPeerlessUpdateOdds puo, std::string &opCode)
 /**
  * Updates a peerless event object with new money line odds.
  */
-void SetEventMLOdds (CPeerlessUpdateOdds puo) {
-    CEventDB edb;
-    eventIndex_t eventIndex;
-    edb.GetEvents(eventIndex);
+void SetEventMLOdds(CPeerlessUpdateOdds puo) {
+    CEventsDB edb{};
+    EventsIndex eventIndex{};
 
     // First check a peerless event exists in the event index.
-    if (eventIndex.count(puo.nEventId) > 0) {
+    if (edb.Read(eventIndex) && eventIndex.count(puo.nEventId) > 0) {
 
         // Get the event object from the index and update the money line odds values.
         CPeerlessEvent plEvent = eventIndex.find(puo.nEventId)->second;
@@ -612,7 +629,7 @@ void SetEventMLOdds (CPeerlessUpdateOdds puo) {
 
         // Update the event in the event index.
         eventIndex[puo.nEventId] = plEvent;
-        CEventDB::SetEvents(eventIndex);
+        edb.Write(eventIndex);
     }
 }
 
@@ -846,17 +863,33 @@ bool CPeerlessSpreadsEvent::ToOpCode(CPeerlessSpreadsEvent pse, std::string &opC
     return true;
 }
 
+void AddEvent(CPeerlessEvent event)
+{
+    CEventsDB db{};
+    db.Save(event);
+}
+
+void AddMapping(CMapping mapping)
+{
+    CMappingsDB db{};
+    db.Save(mapping);
+}
+
+void AddResult(CPeerlessResult res)
+{
+    CResultsDB db{};
+    db.Save(res);
+}
+
 /**
  * Updates a peerless event object with spread odds for the given event ID.
  */
-void SetEventSpreadOdds (CPeerlessSpreadsEvent spreadEvent) {
-    CEventDB edb;
-    eventIndex_t eventIndex;
-    edb.GetEvents(eventIndex);
+void SetEventSpreadOdds(CPeerlessSpreadsEvent spreadEvent) {
+    CEventsDB edb{};
+    EventsIndex eventIndex{};
 
     // First check a peerless event exists in the event index.
-    if (eventIndex.count(spreadEvent.nEventId) > 0) {
-
+    if (edb.Read(eventIndex) && eventIndex.count(spreadEvent.nEventId) > 0) {
         // Get the event object from the index and update the spread odds values.
         CPeerlessEvent plEvent = eventIndex.find(spreadEvent.nEventId)->second;
 
@@ -866,7 +899,7 @@ void SetEventSpreadOdds (CPeerlessSpreadsEvent spreadEvent) {
 
         // Update the event in the event index.
         eventIndex[spreadEvent.nEventId] = plEvent;
-        CEventDB::SetEvents(eventIndex);
+        edb.Write(eventIndex);
     }
 }
 
@@ -934,14 +967,12 @@ bool CPeerlessTotalsEvent::ToOpCode(CPeerlessTotalsEvent pte, std::string &opCod
 /**
  * Updates a peerless event object with totals odds.
  */
-void SetEventTotalOdds (CPeerlessTotalsEvent totalsEvent) {
-    CEventDB edb;
-    eventIndex_t eventIndex;
-    edb.GetEvents(eventIndex);
+void SetEventTotalOdds(CPeerlessTotalsEvent totalsEvent) {
+    CEventsDB edb{};
+    EventsIndex eventIndex{};
 
     // First check a peerless event exists in the event index.
-    if (eventIndex.count(totalsEvent.nEventId) > 0) {
-
+    if (edb.Read(eventIndex) && eventIndex.count(totalsEvent.nEventId) > 0) {
         // Get the event object from the index and update the totals odds values.
         CPeerlessEvent plEvent = eventIndex.find(totalsEvent.nEventId)->second;
 
@@ -951,7 +982,7 @@ void SetEventTotalOdds (CPeerlessTotalsEvent totalsEvent) {
 
         // Update the event in the event index.
         eventIndex[totalsEvent.nEventId] = plEvent;
-        CEventDB::SetEvents(eventIndex);
+        edb.Write(eventIndex);
     }
 }
 
@@ -1018,12 +1049,11 @@ bool CPeerlessEventPatch::ToOpCode(CPeerlessEventPatch pe, std::string &opCode)
  * Updates a peerless event object with new values.
  */
 void ApplyEventPatch (CPeerlessEventPatch plEventPatch) {
-    CEventDB edb;
-    eventIndex_t eventIndex;
-    edb.GetEvents(eventIndex);
+    CEventsDB edb{};
+    EventsIndex eventIndex{};
 
     // First check a peerless event exists in the event index.
-    if (eventIndex.count(plEventPatch.nEventId) > 0) {
+    if (edb.Read(eventIndex) && eventIndex.count(plEventPatch.nEventId) > 0) {
 
         // Get the event object from the index and update the totals odds values.
         CPeerlessEvent plEvent = eventIndex.find(plEventPatch.nEventId)->second;
@@ -1032,7 +1062,7 @@ void ApplyEventPatch (CPeerlessEventPatch plEventPatch) {
 
         // Update the event in the event index.
         eventIndex[plEventPatch.nEventId] = plEvent;
-        CEventDB::SetEvents(eventIndex);
+        edb.Write(eventIndex);
     }
 }
 
@@ -1041,16 +1071,14 @@ void ApplyEventPatch (CPeerlessEventPatch plEventPatch) {
  */
 void SetEventAccummulators (CPeerlessBet plBet, CAmount betAmount) {
 
-    CEventDB edb;
-    eventIndex_t eventsIndex;
-    edb.GetEvents(eventsIndex);
+    CEventsDB edb{};
+    EventsIndex eventsIndex{};
 
     uint64_t oddsDivisor  = Params().OddsDivisor();
     uint64_t betXPermille = Params().BetXPermille();
 
     // Check the events index actually has events
-    if (eventsIndex.size() > 0) {
-
+    if (edb.Read(eventsIndex) && eventsIndex.size() > 0) {
         CPeerlessEvent pe = eventsIndex.find(plBet.nEventId)->second;
         CAmount payout = 0 * COIN;
         CAmount burn = 0;
@@ -1124,7 +1152,7 @@ void SetEventAccummulators (CPeerlessBet plBet, CAmount betAmount) {
         }
 
         eventsIndex[plBet.nEventId] = pe;
-        CEventDB::SetEvents(eventsIndex);
+        edb.Write(eventsIndex);
     }
 
 }
@@ -1218,19 +1246,24 @@ bool CMapping::FromOpCode(std::string opCode, CMapping &cm)
 /**
  * Constructor for the CMapping database object.
  */
-CMappingDB::CMappingDB() :
-    db{"mapping.dat", dbWrapperCacheSize}
+CMappingsDB::CMappingsDB() :
+    db{GetDbName(), dbWrapperCacheSize}
 {
 }
 
-bool CMappingDB::Save(const CMapping& mapping)
+std::string CMappingsDB::GetDbName()
 {
-    mappingIndex_t mappingIndex;
-    if (Read(mapping.GetType(), mappingIndex)) {
-        mappingIndex[mapping.nId] = mapping;
-        return Write(mapping.GetType(), mappingIndex);
+    return MakeDbPath("mappings");
+}
+
+bool CMappingsDB::Save(const CMapping& mapping)
+{
+    MappingsIndex mappingIndex{};
+    if (!Read(mapping.GetType(), mappingIndex)) {
+        mappingIndex.clear();
     }
-    return false;
+    mappingIndex[mapping.nId] = mapping;
+    return Write(mapping.GetType(), mappingIndex);
 }
 
 /**
@@ -1241,9 +1274,9 @@ bool CMappingDB::Save(const CMapping& mapping)
  * @param mappingIndex    The index map which contains Wagerr mappings.
  * @return                Bool
  */
-bool CMappingDB::Write(const MappingTypes mappingType, const mappingIndex_t& mappingIndex)
+bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex)
 {
-    return db.Write(mappingType, mappingIndex);
+    return db.Write(mappingType, mappingsIndex);
 }
 
 
@@ -1255,45 +1288,23 @@ bool CMappingDB::Write(const MappingTypes mappingType, const mappingIndex_t& map
 * @param mappingIndex    The index map which contains Wagerr mappings.
 * @return                Bool
 */
-bool CMappingDB::Read(MappingTypes mappingType, mappingIndex_t& mappingIndex)
+bool CMappingsDB::Read(MappingTypes mappingType, MappingsIndex& mappingsIndex)
 {
-   return db.Read(mappingType, mappingIndex);
+   return db.Read(mappingType, mappingsIndex);
 }
-
 
 
 /**
  * Constructor for the events database object.
  */
-CEventDB::CEventDB()
+CEventsDB::CEventsDB() :
+    db{GetDbName(), dbWrapperCacheSize}
 {
-    pathEvents = GetDataDir() / "events.dat";
 }
 
-/** The global events index. **/
-eventIndex_t CEventDB::eventsIndex;
-CCriticalSection CEventDB::cs_setEvents;
-
-/**
- * Returns the current events list.
- *
- * @param eventIndex
- */
-void CEventDB::GetEvents(eventIndex_t &eventIndex)
+std::string CEventsDB::GetDbName()
 {
-    LOCK(cs_setEvents);
-    eventIndex = eventsIndex;
-}
-
-/**
- * Set the events list.
- *
- * @param eventIndex
- */
-void CEventDB::SetEvents(const eventIndex_t &eventIndex)
-{
-    LOCK(cs_setEvents);
-    eventsIndex = eventIndex;
+    return MakeDbPath("events");
 }
 
 /**
@@ -1301,83 +1312,40 @@ void CEventDB::SetEvents(const eventIndex_t &eventIndex)
  *
  * @param pe CPeerless Event object.
  */
-void CEventDB::AddEvent(CPeerlessEvent pe)
+bool CEventsDB::Save(const CPeerlessEvent& plEvent)
 {
-    if (eventsIndex.count(pe.nEventId) > 0) {
-        CPeerlessEvent saved_pe = eventsIndex.find(pe.nEventId)->second;
-        saved_pe.nStartTime = pe.nStartTime;
-        saved_pe.nHomeOdds = pe.nHomeOdds;
-        saved_pe.nAwayOdds = pe.nAwayOdds;
-        saved_pe.nDrawOdds = pe.nDrawOdds;
-        eventsIndex[saved_pe.nEventId] = saved_pe;
-        CEventDB::SetEvents(eventsIndex);
-    } else {
-        LOCK(cs_setEvents);
-        eventsIndex.insert(make_pair(pe.nEventId, pe));
+    EventsIndex eventIndex{};
+    if (!Read(eventIndex)) {
+        eventIndex.clear();
     }
+    eventIndex[plEvent.nEventId] = plEvent;
+    return Write(eventIndex);
 }
 
 /**
  * Remove and event from the event index.
  *
- * @param pe
+ * @param eventId
  */
-void CEventDB::RemoveEvent(CPeerlessResult pr)
+bool CEventsDB::Erase(const CPeerlessResult& plEvent)
 {
-    LOCK(cs_setEvents);
-
-    if (eventsIndex.count(pr.nEventId)) {
-        eventsIndex.erase(pr.nEventId);
+    EventsIndex eventIndex{};
+    if (Read(eventIndex)) {
+        eventIndex.erase(plEvent.nEventId);
+        return Write(eventIndex);
     }
+    return false;
 }
 
 /**
  * Serialises the event index map into binary format and writes to the events.dat file.
  *
  * @param eventIndex       The events index map which contains the current live events.
- * @param latestBlockHash  The latest block hash which we can use a reference as to when data was last saved to the file.
  * @return                 Bool
  */
-bool CEventDB::Write(const eventIndex_t& eventIndex, uint256 latestBlockHash)
+bool CEventsDB::Write(const EventsIndex& eventsIndex)
 {
-    // Generate random temporary filename.
-    unsigned short randv = 0;
-    GetRandBytes((unsigned char*)&randv, sizeof(randv));
-    std::string tmpfn = strprintf("events.dat.%04x", randv);
-
-    // Serialize event index object and latest block hash as a reference.
-    CDataStream ssEvents(SER_DISK, CLIENT_VERSION);
-    ssEvents << latestBlockHash;
-    ssEvents << eventIndex;
-
-    // Checksum added for verification purposes.
-    uint256 hash = Hash(ssEvents.begin(), ssEvents.end());
-    ssEvents << hash;
-
-    // Open output file, and associate with CAutoFile.
-    boost::filesystem::path pathTemp = GetDataDir() / tmpfn;
-    FILE* file = fopen(pathTemp.string().c_str(), "wb");
-    CAutoFile fileout(file, SER_DISK, CLIENT_VERSION);
-
-    if (fileout.IsNull())
-        return error("%s : Failed to open file %s", __func__, pathTemp.string());
-
-    // Write and commit data.
-    try {
-        fileout << ssEvents;
-    }
-    catch (std::exception& e) {
-        return error("%s : Serialize or I/O error - %s", __func__, e.what());
-    }
-
-    FileCommit(fileout.Get());
-    fileout.fclose();
-
-    // Replace existing events.dat, if any, with new events.dat.XXXX
-    if (!RenameOver(pathTemp, pathEvents))
-        return error("%s: Rename-into-place failed", __func__);
-
-    return true;
+    return db.Write(0, eventsIndex);
 }
 
 /**
@@ -1387,88 +1355,22 @@ bool CEventDB::Write(const eventIndex_t& eventIndex, uint256 latestBlockHash)
  * @param eventIndex The event index map which will be populated with data from the file.
  * @return           Bool
  */
-bool CEventDB::Read(eventIndex_t& eventIndex, uint256& lastBlockHash)
+bool CEventsDB::Read(EventsIndex& eventsIndex)
 {
-    // Open input file, and associate with CAutoFile.
-    FILE* file = fopen(pathEvents.string().c_str(), "rb");
-    CAutoFile filein(file, SER_DISK, CLIENT_VERSION);
-
-    if (filein.IsNull())
-        return error("%s : Failed to open file %s", __func__, pathEvents.string());
-
-    // Use file size to size memory buffer.
-    uint64_t fileSize = boost::filesystem::file_size(pathEvents);
-    uint64_t dataSize = fileSize - sizeof(uint256);
-
-    // Don't try to resize to a negative number if file is small.
-    if (fileSize >= sizeof(uint256))
-        dataSize = fileSize - sizeof(uint256);
-
-    vector<unsigned char> vchData;
-    vchData.resize(dataSize);
-    uint256 hashIn;
-
-    // Read data and checksum from file.
-    try {
-        filein.read((char*)&vchData[0], dataSize);
-        filein >> hashIn;
-    }
-    catch (std::exception& e) {
-        return error("%s : Deserialize or I/O error - %s", __func__, e.what());
-    }
-
-    filein.fclose();
-    CDataStream ssEvents(vchData, SER_DISK, CLIENT_VERSION);
-
-    // Verify stored checksum matches input data.
-    uint256 hashTmp = Hash(ssEvents.begin(), ssEvents.end());
-    if (hashIn != hashTmp)
-        return error("%s : Checksum mismatch, data corrupted", __func__);
-
-    try {
-        ssEvents >> lastBlockHash;
-        ssEvents >> eventIndex;
-    }
-    catch (std::exception& e) {
-        return error("%s : Deserialize or I/O error - %s", __func__, e.what());
-    }
-
-    return true;
+    return db.Read(0, eventsIndex);
 }
-
 
 /**
  * Constructor for the results database object.
  */
-CResultDB::CResultDB()
+CResultsDB::CResultsDB() :
+    db{GetDbName(), dbWrapperCacheSize}
 {
-    pathResults = GetDataDir() / "results.dat";
 }
 
-/** The global results index. **/
-resultsIndex_t CResultDB::resultsIndex;
-CCriticalSection CResultDB::cs_setResults;
-
-/**
- * Returns the current results.
- *
- * @param resultsIndex
- */
-void CResultDB::GetResults(resultsIndex_t &resultIndex)
+std::string CResultsDB::GetDbName()
 {
-    LOCK(cs_setResults);
-    resultIndex = resultsIndex;
-}
-
-/**
- * Set the results list.
- *
- * @param resultsIndex
- */
-void CResultDB::SetResults(const resultsIndex_t &resultIndex)
-{
-    LOCK(cs_setResults);
-    resultsIndex = resultIndex;
+    return MakeDbPath("results");
 }
 
 /**
@@ -1476,18 +1378,14 @@ void CResultDB::SetResults(const resultsIndex_t &resultIndex)
  *
  * @param pr CPeerlessResult object.
  */
-void CResultDB::AddResult(CPeerlessResult pr)
+bool CResultsDB::Save(const CPeerlessResult& plResult)
 {
-    // If result already exists then update it
-    if (resultsIndex.count(pr.nEventId) > 0) {
-        resultsIndex[pr.nEventId] = pr;
-        CResultDB::SetResults(resultsIndex);
+    ResultsIndex resultsIndex{};
+    if (!Read(resultsIndex)) {
+        resultsIndex.clear();
     }
-    // Else save the new result.
-    else {
-        LOCK(cs_setResults);
-        resultsIndex.insert(make_pair(pr.nEventId, pr));
-    }
+    resultsIndex[plResult.nEventId] = plResult;
+    return Write(resultsIndex);
 }
 
 /**
@@ -1495,59 +1393,25 @@ void CResultDB::AddResult(CPeerlessResult pr)
  *
  * @param pe
  */
-void CResultDB::RemoveResult(CPeerlessResult pr)
+bool CResultsDB::Erase(const CPeerlessResult& plResult)
 {
-    LOCK(cs_setResults);
-    resultsIndex.erase(pr.nEventId);
+    ResultsIndex resultsIndex{};
+    if (Read(resultsIndex)) {
+        resultsIndex.erase(plResult.nEventId);
+        return Write(resultsIndex);
+    }
+    return false;
 }
 
 /**
  * Serialises the event index map into binary format and writes to the events.dat file.
  *
  * @param eventIndex       The events index map which contains the current live events.
- * @param latestBlockHash  The latest block hash which we can use a reference as to when data was last saved to the file.
  * @return                 Bool
  */
-bool CResultDB::Write(const resultsIndex_t& resultsIndex, uint256 latestBlockHash)
+bool CResultsDB::Write(const ResultsIndex& resultsIndex)
 {
-    // Generate random temporary filename.
-    unsigned short randv = 0;
-    GetRandBytes((unsigned char*)&randv, sizeof(randv));
-    std::string tmpfn = strprintf("results.dat.%04x", randv);
-
-    // Serialize event index object and latest block hash as a reference.
-    CDataStream ssResults(SER_DISK, CLIENT_VERSION);
-    ssResults << latestBlockHash;
-    ssResults << resultsIndex;
-
-    // Checksum added for verification purposes.
-    uint256 hash = Hash(ssResults.begin(), ssResults.end());
-    ssResults << hash;
-
-    // Open output file, and associate with CAutoFile.
-    boost::filesystem::path pathTemp = GetDataDir() / tmpfn;
-    FILE* file = fopen(pathTemp.string().c_str(), "wb");
-    CAutoFile fileout(file, SER_DISK, CLIENT_VERSION);
-
-    if (fileout.IsNull())
-        return error("%s : Failed to open file %s", __func__, pathTemp.string());
-
-    // Write and commit data.
-    try {
-        fileout << ssResults;
-    }
-    catch (std::exception& e) {
-        return error("%s : Serialize or I/O error - %s", __func__, e.what());
-    }
-
-    FileCommit(fileout.Get());
-    fileout.fclose();
-
-    // Replace existing events.dat, if any, with new events.dat.XXXX
-    if (!RenameOver(pathTemp, pathResults))
-        return error("%s: Rename-into-place failed", __func__);
-
-    return true;
+    return db.Write(0, resultsIndex);
 }
 
 /**
@@ -1557,54 +1421,11 @@ bool CResultDB::Write(const resultsIndex_t& resultsIndex, uint256 latestBlockHas
  * @param eventIndex The event index map which will be populated with data from the file.
  * @return           Bool
  */
-bool CResultDB::Read(resultsIndex_t& resultsIndex, uint256& lastBlockHash)
+bool CResultsDB::Read(ResultsIndex& resultsIndex)
 {
-    // Open input file, and associate with CAutoFile.
-    FILE* file = fopen(pathResults.string().c_str(), "rb");
-    CAutoFile filein(file, SER_DISK, CLIENT_VERSION);
-
-    if (filein.IsNull())
-        return error("%s : Failed to open file %s", __func__, pathResults.string());
-
-    // Use file size to size memory buffer.
-    uint64_t fileSize = boost::filesystem::file_size(pathResults);
-    uint64_t dataSize = fileSize - sizeof(uint256);
-
-    // Don't try to resize to a negative number if file is small.
-    if (fileSize >= sizeof(uint256))
-        dataSize = fileSize - sizeof(uint256);
-
-    vector<unsigned char> vchData;
-    vchData.resize(dataSize);
-    uint256 hashIn;
-
-    // Read data and checksum from file.
-    try {
-        filein.read((char*)&vchData[0], dataSize);
-        filein >> hashIn;
-    }
-    catch (std::exception& e) {
-        return error("%s : Deserialize or I/O error - %s", __func__, e.what());
-    }
-
-    filein.fclose();
-    CDataStream ssResults(vchData, SER_DISK, CLIENT_VERSION);
-
-    // Verify stored checksum matches input data.
-    uint256 hashTmp = Hash(ssResults.begin(), ssResults.end());
-    if (hashIn != hashTmp)
-        return error("%s : Checksum mismatch, data corrupted", __func__);
-
-    try {
-        ssResults >> lastBlockHash;
-        ssResults >> resultsIndex;
-    }
-    catch (std::exception& e) {
-        return error("%s : Deserialize or I/O error - %s", __func__, e.what());
-    }
-
-    return true;
+    return db.Read(0, resultsIndex);
 }
+
 
 /**
  * Check a given block to see if it contains a Peerless result TX.

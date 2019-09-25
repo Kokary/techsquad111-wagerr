@@ -70,25 +70,27 @@ UniValue listevents(const UniValue& params, bool fHelp)
             "\nExamples:\n" +
             HelpExampleCli("listevents", "") + HelpExampleRpc("listevents", ""));
 
-    CEventDB edb{};
-    CMappingDB dbMapping{};
-    eventIndex_t eventsIndex{};
-    mappingIndex_t sportsIndex{};
-    mappingIndex_t roundsIndex{};
-    mappingIndex_t teamsIndex{};
-    mappingIndex_t tournamentsIndex{};
-    edb.GetEvents(eventsIndex);
+    CEventsDB dbEvents{};
+    CMappingsDB dbMappings{};
+    EventsIndex eventsIndex{};
+    MappingsIndex sportsIndex{};
+    MappingsIndex roundsIndex{};
+    MappingsIndex teamsIndex{};
+    MappingsIndex tournamentsIndex{};
 
-    if (!dbMapping.Read(sportMapping, sportsIndex)) {
+    if (!dbEvents.Read(eventsIndex)) {
+        throw runtime_error("No events found");
+    }
+    if (!dbMappings.Read(sportMapping, sportsIndex)) {
         throw runtime_error("No sports mapping found");
     }
-    if (!dbMapping.Read(roundMapping, roundsIndex)) {
+    if (!dbMappings.Read(roundMapping, roundsIndex)) {
         throw runtime_error("No rounds mapping found");
     }
-    if (!dbMapping.Read(teamMapping, teamsIndex)) {
+    if (!dbMappings.Read(teamMapping, teamsIndex)) {
         throw runtime_error("No teams mapping found");
     }
-    if (!dbMapping.Read(tournamentMapping, tournamentsIndex)) {
+    if (!dbMappings.Read(tournamentMapping, tournamentsIndex)) {
         throw runtime_error("No tournaments mapping found");
     }
 
@@ -302,20 +304,20 @@ UniValue listbets(const UniValue& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative from");
 
     UniValue ret(UniValue::VARR);
-
+    CEventsDB dbEvents{};
+    CMappingsDB dbMappings{};
+    EventsIndex eventsIndex{};
+    MappingsIndex teamsIndex{};
+    MappingsIndex tournamentsIndex{};
     const CWallet::TxItems & txOrdered = pwalletMain->wtxOrdered;
 
-    CEventDB edb;
-    CMappingDB dbMapping{};
-    eventIndex_t eventIndex;
-    mappingIndex_t teamsIndex;
-    mappingIndex_t tournamentsIndex;
-    edb.GetEvents(eventIndex);
-
-    if (!dbMapping.Read(teamMapping, teamsIndex)) {
+    if (!dbEvents.Read(eventsIndex)) {
+        throw runtime_error("No events found");
+    }
+    if (!dbMappings.Read(teamMapping, teamsIndex)) {
         throw runtime_error("No teams mapping found");
     }
-    if (!dbMapping.Read(tournamentMapping, tournamentsIndex)) {
+    if (!dbMappings.Read(tournamentMapping, tournamentsIndex)) {
         throw runtime_error("No tournaments mapping found");
     }
 
@@ -342,8 +344,8 @@ UniValue listbets(const UniValue& params, bool fHelp)
                         entry.push_back(Pair("event-id", (uint64_t) plBet.nEventId));
 
                         // Retrieve the event details
-                        if (eventIndex.count(plBet.nEventId)){
-                            CPeerlessEvent plEvent = eventIndex.find(plBet.nEventId)->second;
+                        if (eventsIndex.count(plBet.nEventId)){
+                            CPeerlessEvent plEvent = eventsIndex.find(plBet.nEventId)->second;
 
                             entry.push_back(Pair("starting", plEvent.nStartTime));
                             if (teamsIndex.count(plEvent.nHomeTeam)) {
@@ -361,11 +363,10 @@ UniValue listbets(const UniValue& params, bool fHelp)
                         entry.push_back(Pair("amount", ValueFromAmount(txout.nValue)));
 
                         // Check if the users bet has a result posted, if so check to see it its a winning or losing bet.
-                        CResultDB rdb;
-                        resultsIndex_t resultsIndex;
-                        rdb.GetResults(resultsIndex);
+                        CResultsDB dbResults{};
+                        ResultsIndex resultsIndex{};
 
-                        if (resultsIndex.size() > 0) {
+                        if (dbResults.Read(resultsIndex) && resultsIndex.size() > 0) {
                             std::string betResult = "pending";
 
                             if (resultsIndex.count(plBet.nEventId)) {
@@ -1166,24 +1167,19 @@ UniValue geteventsliability(const UniValue& params, bool fHelp)
             "\nExamples:\n" +
             HelpExampleCli("geteventtotals", "") + HelpExampleRpc("geteventtotals", ""));
 
-    CEventDB edb;
-    eventIndex_t eventsIndex;
-    edb.GetEvents(eventsIndex);
+    CEventsDB dbEvents{};
+    EventsIndex eventsIndex{};
+    int payoutThreshold = params[0].get_int();
+    int betThreshold = params[1].get_int();
+    UniValue ret(UniValue::VARR);
 
     // Check the events index actually has events,
-    if (eventsIndex.size() < 1) {
+    if (!dbEvents.Read(eventsIndex) || eventsIndex.size() < 1) {
         throw runtime_error("Currently no events to list.");
     }
 
-    int payoutThreshold = params[0].get_int();
-    int betThreshold = params[1].get_int();
-
-    UniValue ret(UniValue::VARR);
-
-    map<uint32_t, CPeerlessEvent>::iterator it;
-    for (it = eventsIndex.begin(); it != eventsIndex.end(); it++) {
-
-        CPeerlessEvent plEvent = it->second;
+    for (auto it = eventsIndex.begin(); it != eventsIndex.end(); it++) {
+        const CPeerlessEvent plEvent = it->second;
 
         UniValue event(UniValue::VOBJ);
         event.push_back(Pair("event-id", (int) plEvent.nEventId));

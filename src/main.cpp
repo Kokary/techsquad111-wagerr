@@ -4907,7 +4907,6 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
         return state.Abort(std::string("System error: ") + e.what());
     }
 
-    CMappingDB dbMapping{};
     bool eiUpdated = false;
     // Look through the block for any events, results or mapping TX.
     if (pindex->nHeight > Params().BetStartHeight()) {
@@ -4949,69 +4948,50 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
                         // TODO - Optimise the OP code validation, we don't need to compare current OP code against all TX types.
                         // if it matches any TX type the rest should be skipped.
 
+                        // If mapping found then add it to the relating map index and write the map index to disk.
+                        CMapping mapping{};
+                        if (CMapping::FromOpCode(opCode, mapping)) {
+                            AddMapping(mapping);
+                        }
+
                         // If events found in block add them to the events index.
-                        CPeerlessEvent plEvent;
+                        CPeerlessEvent plEvent{};
                         if (CPeerlessEvent::FromOpCode(opCode, plEvent)) {
-                            CEventDB::AddEvent(plEvent);
+                            AddEvent(plEvent);
                             eiUpdated = true;
                         }
 
-                        CPeerlessEventPatch plEventPatch;
+                        // If event patch found in block apply them to the events.
+                        CPeerlessEventPatch plEventPatch{};
                         if (CPeerlessEventPatch::FromOpCode(opCode, plEventPatch)) {
                             ApplyEventPatch(plEventPatch);
                             eiUpdated = true;
                         }
 
-                        // If results found in block remove event from event index and add result to result index.
-                        CPeerlessResult plResult;
+                        // If results found in block add result to result index.
+                        CPeerlessResult plResult{};
                         if (CPeerlessResult::FromOpCode(opCode, plResult)) {
-//                            CEventDB::RemoveEvent(plResult);
-                            CResultDB::AddResult(plResult);
-                            eiUpdated = true;
+                            AddResult(plResult);
                         }
 
                         // If update money line odds TX found in block, update the event index.
-                        CPeerlessUpdateOdds puo;
+                        CPeerlessUpdateOdds puo{};
                         if (CPeerlessUpdateOdds::FromOpCode(opCode, puo)) {
                             SetEventMLOdds(puo);
-                            eiUpdated = true;
                         }
 
                         // If spread odds TX found then update the spread odds for that event object.
-                        CPeerlessSpreadsEvent spreadEvent;
+                        CPeerlessSpreadsEvent spreadEvent{};
                         if (CPeerlessSpreadsEvent::FromOpCode(opCode, spreadEvent)) {
                             SetEventSpreadOdds(spreadEvent);
-                            eiUpdated = true;
                         }
 
                         // If total odds TX found then update the total odds for that event object.
-                        CPeerlessTotalsEvent totalsEvent;
+                        CPeerlessTotalsEvent totalsEvent{};
                         if (CPeerlessTotalsEvent::FromOpCode(opCode, totalsEvent)) {
                             SetEventTotalOdds(totalsEvent);
-                            eiUpdated = true;
-                        }
-
-                        // If mapping found then add it to the relating map index and write the map index to disk.
-                        CMapping mapping;
-                        if (CMapping::FromOpCode(opCode, mapping)) {
-                            dbMapping.Save(mapping);
                         }
                     }
-                }
-
-                // Write event and result indexes to events.dat and results.dat respectively.
-                if (eiUpdated) {
-                    // Update the global event index.
-                    CEventDB edb;
-                    eventIndex_t eventIndex;
-                    edb.GetEvents(eventIndex);
-                    edb.Write(eventIndex, block.GetHash());
-
-                    // Update the global results index.
-                    CResultDB rdb;
-                    resultsIndex_t resultsIndex;
-                    rdb.GetResults(resultsIndex);
-                    rdb.Write(resultsIndex, block.GetHash());
                 }
             }
         }

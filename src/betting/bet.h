@@ -416,74 +416,59 @@ public:
 };
 
 // Define new map type to store Wagerr mappings.
-typedef std::map<uint32_t, CMapping> mappingIndex_t;
+using MappingsIndex = std::map<uint32_t, CMapping>;
 
-class CMappingDB
+class CMappingsDB
 {
-private:
-    CLevelDBWrapper db;
-
 public:
-    // Parametrized Constructor.
-    explicit CMappingDB();
+    // Default Constructor.
+    explicit CMappingsDB();
+
+    static std::string GetDbName();
 
     bool Save(const CMapping& mapping);
-    bool Write(const MappingTypes mappingType, const mappingIndex_t& mappingIndex);
-    bool Read(const MappingTypes mappingType, mappingIndex_t& mappingIndex);
+    bool Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex);
+    bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex);
+private:
+    CLevelDBWrapper db;
 };
 
 // Define new map type to store Wagerr events.
-typedef std::map<uint32_t, CPeerlessEvent> eventIndex_t;
+using EventsIndex = std::map<uint32_t, CPeerlessEvent>;
 
-class CEventDB
+class CEventsDB
 {
-protected:
-    // Global variable that stores the current live Wagerr events.
-    static eventIndex_t eventsIndex;
-    static CCriticalSection cs_setEvents;
-
-private:
-    boost::filesystem::path pathEvents;
-
 public:
     // Default constructor.
-    CEventDB();
+    explicit CEventsDB();
 
-    bool Write(const eventIndex_t& eventIndex,  uint256 latestProcessedBlock);
-    bool Read(eventIndex_t& eventIndex, uint256& lastBlockHash);
+    static std::string GetDbName();
 
-    static void GetEvents(eventIndex_t &eventIndex);
-    static void SetEvents(const eventIndex_t &eventIndex);
-
-    static void AddEvent(CPeerlessEvent pe);
-    static void RemoveEvent(CPeerlessResult pr);
+    bool Save(const CPeerlessEvent& plEvent);
+    bool Erase(const CPeerlessResult& plEvent);
+    bool Write(const EventsIndex& eventsIndex);
+    bool Read(EventsIndex& eventsIndex);
+private:
+    CLevelDBWrapper db;
 };
 
 // Define new map type to store Wagerr results.
-typedef std::map<uint32_t, CPeerlessResult> resultsIndex_t;
+using ResultsIndex = std::map<uint32_t, CPeerlessResult>;
 
-class CResultDB
+class CResultsDB
 {
-protected:
-    // Global variable that stores the Wagerr results.
-    static resultsIndex_t resultsIndex;
-    static CCriticalSection cs_setResults;
-
-private:
-    boost::filesystem::path pathResults;
-
 public:
     // Default constructor.
-    CResultDB();
+    CResultsDB();
 
-    bool Write(const resultsIndex_t& resultsIndex,  uint256 latestProcessedBlock);
-    bool Read(resultsIndex_t& resultsIndex, uint256& lastBlockHash);
+    static std::string GetDbName();
 
-    static void GetResults(resultsIndex_t &resultsIndex);
-    static void SetResults(const resultsIndex_t &resultsIndex);
-
-    static void AddResult(CPeerlessResult pe);
-    static void RemoveResult(CPeerlessResult pe);
+    bool Save(const CPeerlessResult& plResult);
+    bool Erase(const CPeerlessResult& plResult);
+    bool Write(const ResultsIndex& resultsIndex);
+    bool Read(ResultsIndex& resultsIndex);
+private:
+    CLevelDBWrapper db;
 };
 
 /** Find peerless events. **/
@@ -498,6 +483,12 @@ std::vector<CBetOut> GetBetPayouts(int height);
 /** Get the chain games winner and return the payout vector. **/
 std::vector<CBetOut> GetCGLottoBetPayouts(int height);
 
+void AddEvent(CPeerlessEvent event);
+
+void AddMapping(CMapping mapping);
+
+void AddResult(CPeerlessResult res);
+
 /** Set a peerless event spread odds **/
 void SetEventSpreadOdds(CPeerlessSpreadsEvent sEventOdds);
 
@@ -511,6 +502,6 @@ void ApplyEventPatch(CPeerlessEventPatch plEventPatch);
 void SetEventMLOdds(CPeerlessUpdateOdds mEventOdds);
 
 /** Set a peerless event accumulators **/
-void SetEventAccummulators (CPeerlessBet plBet, CAmount betAmount);
+void SetEventAccummulators(CPeerlessBet plBet, CAmount betAmount);
 
 #endif // WAGERR_BET_H
