@@ -4907,93 +4907,10 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
         return state.Abort(std::string("System error: ") + e.what());
     }
 
-    bool eiUpdated = false;
     // Look through the block for any events, results or mapping TX.
     if (pindex->nHeight > Params().BetStartHeight()) {
-        for (CTransaction& tx : block.vtx) {
-
-            // Ensure the event TX has come from Oracle wallet.
-            const CTxIn &txin = tx.vin[0];
-            bool validOracleTx = IsValidOracleTx(txin);
-
-            // Search for any new bets
-            for (unsigned int i = 0; i < tx.vout.size(); i++) {
-                const CTxOut& txout = tx.vout[i];
-                std::string s = txout.scriptPubKey.ToString();
-
-                if (0 == strncmp(s.c_str(), "OP_RETURN", 9)) {
-                    vector<unsigned char> v = ParseHex(s.substr(9, string::npos));
-                    std::string opCode(v.begin(), v.end());
-
-                    CPeerlessBet plBet;
-                    if (CPeerlessBet::FromOpCode(opCode, plBet)) {
-                        CAmount betAmount = txout.nValue;
-                        SetEventAccummulators(plBet, betAmount);
-                        eiUpdated = true;
-                    }
-                }
-            }
-
-            // If a valid OMNO transaction.
-            if (validOracleTx) {
-
-                for (unsigned int i = 0; i < tx.vout.size(); i++) {
-                    const CTxOut& txout = tx.vout[i];
-                    std::string s = txout.scriptPubKey.ToString();
-
-                    if (0 == strncmp(s.c_str(), "OP_RETURN", 9)) {
-                        vector<unsigned char> v = ParseHex(s.substr(9, string::npos));
-                        std::string opCode(v.begin(), v.end());
-
-                        // TODO - Optimise the OP code validation, we don't need to compare current OP code against all TX types.
-                        // if it matches any TX type the rest should be skipped.
-
-                        // If mapping found then add it to the relating map index and write the map index to disk.
-                        CMapping mapping{};
-                        if (CMapping::FromOpCode(opCode, mapping)) {
-                            AddMapping(mapping);
-                        }
-
-                        // If events found in block add them to the events index.
-                        CPeerlessEvent plEvent{};
-                        if (CPeerlessEvent::FromOpCode(opCode, plEvent)) {
-                            AddEvent(plEvent);
-                            eiUpdated = true;
-                        }
-
-                        // If event patch found in block apply them to the events.
-                        CPeerlessEventPatch plEventPatch{};
-                        if (CPeerlessEventPatch::FromOpCode(opCode, plEventPatch)) {
-                            ApplyEventPatch(plEventPatch);
-                            eiUpdated = true;
-                        }
-
-                        // If results found in block add result to result index.
-                        CPeerlessResult plResult{};
-                        if (CPeerlessResult::FromOpCode(opCode, plResult)) {
-                            AddResult(plResult);
-                        }
-
-                        // If update money line odds TX found in block, update the event index.
-                        CPeerlessUpdateOdds puo{};
-                        if (CPeerlessUpdateOdds::FromOpCode(opCode, puo)) {
-                            SetEventMLOdds(puo);
-                        }
-
-                        // If spread odds TX found then update the spread odds for that event object.
-                        CPeerlessSpreadsEvent spreadEvent{};
-                        if (CPeerlessSpreadsEvent::FromOpCode(opCode, spreadEvent)) {
-                            SetEventSpreadOdds(spreadEvent);
-                        }
-
-                        // If total odds TX found then update the total odds for that event object.
-                        CPeerlessTotalsEvent totalsEvent{};
-                        if (CPeerlessTotalsEvent::FromOpCode(opCode, totalsEvent)) {
-                            SetEventTotalOdds(totalsEvent);
-                        }
-                    }
-                }
-            }
+        for (const CTransaction& tx : block.vtx) {
+            ParseBettingTx(tx);
         }
     }
 

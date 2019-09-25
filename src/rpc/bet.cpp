@@ -40,7 +40,6 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
                 "\nExamples:\n" +
                 HelpExampleCli("getmappingid", "") + HelpExampleRpc("getmappingid", ""));
 
-    CMappingsDB dbMappings{};
     MappingsIndex mappingsIndex{};
     std::string mIndex = params[0].get_str();
     std::string name   = params[1].get_str();
@@ -54,7 +53,7 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
 
     bool mappingFound  = false;
     unsigned int nFirstIndexFree = 0;
-    if (dbMappings.Read(type, mappingsIndex)) {
+    if (bettingdb.mappings->Read(type, mappingsIndex)) {
         // Check the map for the string name.
         bool FirstIndexFreeFound = false;
         map<uint32_t, CMapping>::iterator it;
@@ -87,7 +86,7 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
         cm.sName    = name;
         cm.nVersion = 1;
 
-        dbMappings.Save(cm);
+        bettingdb.mappings->Save(cm);
         mapping.push_back(Pair("mapping-id",  (uint64_t) nFirstIndexFree));
         mapping.push_back(Pair("exists", false));
         mapping.push_back(Pair("mapping-index", mIndex));
@@ -125,7 +124,6 @@ UniValue getmappingname(const UniValue& params, bool fHelp)
                 "\nExamples:\n" +
                 HelpExampleCli("getmappingname", "") + HelpExampleRpc("getmappingname", ""));
 
-    CMappingsDB dbMappings{};
     MappingsIndex mappingsIndex{};
     std::string mIndex = params[0].get_str();
     uint32_t id        = std::stoi(params[1].get_str());
@@ -137,7 +135,7 @@ UniValue getmappingname(const UniValue& params, bool fHelp)
         throw runtime_error("No mapping exist for the mapping index you provided.");
     }
 
-    if (!dbMappings.Read(type, mappingsIndex)) {
+    if (!bettingdb.mappings->Read(type, mappingsIndex)) {
         throw runtime_error("No mapping saved for the mapping type you provided.");
     }
 

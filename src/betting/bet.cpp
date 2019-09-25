@@ -24,14 +24,18 @@ static constexpr std::size_t dbWrapperCacheSize{10 << 20};
 #define PTE_OP_STRLEN 34
 #define PEP_OP_STRLEN 22
 
+BettingDB bettingdb = {};
 
+namespace
+{
 std::string MakeDbPath(const char* name)
 {
     using namespace boost::filesystem;
 
     std::string result{};
-    path dir{"betting"};
+    path dir{GetDataDir()};
 
+    dir /= "betting";
     dir /= name;
 
     if (is_directory(dir) || create_directories(dir) ) {
@@ -41,204 +45,6 @@ std::string MakeDbPath(const char* name)
     }
 
     return result;
-}
-
-/**
- * Validate the transaction to ensure it has been posted by an oracle node.
- *
- * @param txin  TX vin input hash.
- * @return      Bool
- */
-bool IsValidOracleTx(const CTxIn &txin)
-{
-    COutPoint prevout = txin.prevout;
-    std::vector<string> oracleAddrs = Params().OracleWalletAddrs();
-
-    uint256 hashBlock;
-    CTransaction txPrev;
-    if (GetTransaction(prevout.hash, txPrev, hashBlock, true)) {
-
-        const CTxOut &prevTxOut = txPrev.vout[prevout.n];
-        std::string scriptPubKey = prevTxOut.scriptPubKey.ToString();
-
-        txnouttype type;
-        vector<CTxDestination> prevAddrs;
-        int nRequired;
-
-        if (ExtractDestinations(prevTxOut.scriptPubKey, type, prevAddrs, nRequired)) {
-            for (const CTxDestination &prevAddr : prevAddrs) {
-                if (std::find(oracleAddrs.begin(), oracleAddrs.end(), CBitcoinAddress(prevAddr).ToString()) != oracleAddrs.end()) {
-                    return true;
-                }
-            }
-        }
-    }
-
-    return false;
-}
-
-/**
- * Takes a payout vector and aggregates the total WGR that is required to pay out all bets.
- * We also calculate and add the OMNO and dev fund rewards.
- *
- * @param vExpectedPayouts  A vector containing all the winning bets that need to be paid out.
- * @param nMNBetReward  The Oracle masternode reward.
- * @return
- */
-int64_t GetBlockPayouts(std::vector<CBetOut>& vExpectedPayouts, CAmount& nMNBetReward)
-{
-    CAmount profitAcc = 0;
-    CAmount nPayout = 0;
-    CAmount totalAmountBet = 0;
-
-    // Set the OMNO and Dev reward addresses
-    std::string devPayoutAddr  = Params().DevPayoutAddr();
-    std::string OMNOPayoutAddr = Params().OMNOPayoutAddr();
-
-    // Loop over the payout vector and aggregate values.
-    for (unsigned i = 0; i < vExpectedPayouts.size(); i++) {
-        CAmount betValue = vExpectedPayouts[i].nBetValue;
-        CAmount payValue = vExpectedPayouts[i].nValue;
-
-        totalAmountBet += betValue;
-        profitAcc += payValue - betValue;
-        nPayout += payValue;
-    }
-
-    if (vExpectedPayouts.size() > 0) {
-        // Calculate the OMNO reward and the Dev reward.
-        CAmount nOMNOReward = (CAmount)(profitAcc * Params().OMNORewardPermille() / (1000.0 - Params().BetXPermille()));
-        CAmount nDevReward  = (CAmount)(profitAcc * Params().DevRewardPermille() / (1000.0 - Params().BetXPermille()));
-
-        // Add both reward payouts to the payout vector.
-        vExpectedPayouts.emplace_back(nDevReward, GetScriptForDestination(CBitcoinAddress(devPayoutAddr).Get()));
-        vExpectedPayouts.emplace_back(nOMNOReward, GetScriptForDestination(CBitcoinAddress(OMNOPayoutAddr).Get()));
-
-        nPayout += nDevReward + nOMNOReward;
-    }
-
-    return  nPayout;
-}
-
-/**
- * Takes a payout vector and aggregates the total WGR that is required to pay out all CGLotto bets.
- *
- * @param vexpectedCGPayouts  A vector containing all the winning bets that need to be paid out.
- * @param nMNBetReward  The Oracle masternode reward.
- * @return
- */
-int64_t GetCGBlockPayouts(std::vector<CBetOut>& vexpectedCGPayouts, CAmount& nMNBetReward)
-{
-    CAmount nPayout = 0;
-
-    for (unsigned i = 0; i < vexpectedCGPayouts.size(); i++) {
-        CAmount payValue = vexpectedCGPayouts[i].nValue;
-        nPayout += payValue;
-    }
-
-    return  nPayout;
-}
-
-/**
- * Validates the payout block to ensure all bet payout amounts and payout addresses match their expected values.
- *
- * @param vExpectedPayouts -  The bet payout vector.
- * @param nHeight - The current chain height.
- * @return
- */
-bool IsBlockPayoutsValid(std::vector<CBetOut> vExpectedPayouts, CBlock block)
-{
-    unsigned long size = vExpectedPayouts.size();
-
-    // If we have payouts to validate.
-    if (size > 0) {
-
-        CTransaction &tx = block.vtx[1];
-
-        // Get the vin staking value so we can use it to find out how many staking TX in the vouts.
-        const CTxIn &txin         = tx.vin[0];
-        COutPoint prevout         = txin.prevout;
-        unsigned int numStakingTx = 0;
-        CAmount stakeAmount       = 0;
-
-        uint256 hashBlock;
-        CTransaction txPrev;
-
-        if (GetTransaction(prevout.hash, txPrev, hashBlock, true)) {
-            const CTxOut &prevTxOut = txPrev.vout[prevout.n];
-            stakeAmount = prevTxOut.nValue;
-        }
-
-        // Count the coinbase and staking vouts in the current block TX.
-        CAmount totalStakeAcc = 0;
-        for (unsigned int i = 0; i < tx.vout.size(); i++) {
-            const CTxOut &txout = tx.vout[i];
-            CAmount voutValue   = txout.nValue;
-
-            if (totalStakeAcc < stakeAmount) {
-                numStakingTx++;
-            }
-            else {
-                break;
-            }
-
-            totalStakeAcc += voutValue;
-        }
-        if (vExpectedPayouts.size() + numStakingTx > tx.vout.size() - 1) {
-            LogPrintf("%s - Incorrect number of transactions in block %s\n", __func__, block.GetHash().ToString());
-            return false;
-        }
-
-        // Validate the payout block against the expected payouts vector. If all payout amounts and payout addresses match then we have a valid payout block.
-        for (unsigned int j = 0; j < vExpectedPayouts.size(); j++) {
-            unsigned int i = numStakingTx + j;
-
-            const CTxOut &txout = tx.vout[i];
-            CAmount voutValue   = txout.nValue;
-            CAmount vExpected   = vExpectedPayouts[i - numStakingTx].nValue;
-
-            LogPrintf("Bet Amount %li  - Expected Bet Amount: %li \n", voutValue, vExpected);
-
-            // Get the bet payout address.
-            CTxDestination betAddr;
-            ExtractDestination(tx.vout[i].scriptPubKey, betAddr);
-            std::string betAddrS = CBitcoinAddress(betAddr).ToString();
-
-            // Get the expected payout address.
-            CTxDestination expectedAddr;
-            ExtractDestination(vExpectedPayouts[i - numStakingTx].scriptPubKey, expectedAddr);
-            std::string expectedAddrS = CBitcoinAddress(expectedAddr).ToString();
-
-            LogPrintf("Bet Address %s  - Expected Bet Address: %s \n", betAddrS.c_str(), expectedAddrS.c_str());
-
-            if (vExpected != voutValue && betAddrS != expectedAddrS) {
-                LogPrintf("Validation failed! \n");
-                return false;
-            }
-        }
-    }
-
-    return true;
-}
-
-/**
- * `ReadBTXFormatVersion` returns -1 if the `opCode` doesn't begin with a valid "BTX" prefix.
- *
- * @param opCode The OpCode as a string
- * @return       The protocal version number
- */
-int ReadBTXFormatVersion(std::string opCode)
-{
-    // Check the first three bytes match the "BTX" format specification.
-    if (opCode[0] != 'B') {
-        return -1;
-    }
-
-    // Check the BTX protocol version number is in range.
-    int v = opCode[1];
-
-    // Versions outside the range [1, 254] are not supported.
-    return v < 1 || v > 254 ? -1 : v;
 }
 
 /**
@@ -323,6 +129,28 @@ std::string ToHex(uint32_t value, int length)
         strBuffer << std::hex << std::setw(length) << std::setfill('0') << le_value;
     }
     return strBuffer.str();
+}
+
+/**
+ * `ReadBTXFormatVersion` returns -1 if the `opCode` doesn't begin with a valid "BTX" prefix.
+ *
+ * @param opCode The OpCode as a string
+ * @return       The protocal version number
+ */
+int ReadBTXFormatVersion(std::string opCode)
+{
+    // Check the first three bytes match the "BTX" format specification.
+    if (opCode[0] != 'B') {
+        return -1;
+    }
+
+    // Check the BTX protocol version number is in range.
+    int v = opCode[1];
+
+    // Versions outside the range [1, 254] are not supported.
+    return v < 1 || v > 254 ? -1 : v;
+}
+
 }
 
 /**
@@ -611,29 +439,6 @@ bool CPeerlessUpdateOdds::ToOpCode(CPeerlessUpdateOdds puo, std::string &opCode)
 }
 
 /**
- * Updates a peerless event object with new money line odds.
- */
-void SetEventMLOdds(CPeerlessUpdateOdds puo) {
-    CEventsDB edb{};
-    EventsIndex eventIndex{};
-
-    // First check a peerless event exists in the event index.
-    if (edb.Read(eventIndex) && eventIndex.count(puo.nEventId) > 0) {
-
-        // Get the event object from the index and update the money line odds values.
-        CPeerlessEvent plEvent = eventIndex.find(puo.nEventId)->second;
-
-        plEvent.nHomeOdds = puo.nHomeOdds;
-        plEvent.nAwayOdds = puo.nAwayOdds;
-        plEvent.nDrawOdds = puo.nDrawOdds;
-
-        // Update the event in the event index.
-        eventIndex[puo.nEventId] = plEvent;
-        edb.Write(eventIndex);
-    }
-}
-
-/**
  * Split a CChainGamesEvent OpCode string into byte components and store in chain games
  * result object.
  *
@@ -742,6 +547,31 @@ bool CChainGamesBet::ToOpCode(CChainGamesBet cgb, std::string &opCode)
         // TODO - add proper error handling
         return false;
     }
+
+    return true;
+}
+
+bool CChainGamesResult::FromScript(CScript script)
+{
+    // LogPrintf("%s - %s\n", __func__, script.ToString());
+
+    CScript::const_iterator pc = script.begin();
+    std::vector<unsigned char> data;
+    opcodetype opcode;
+
+    // Check that we are parsing an OP_RETURN script
+    if (!script.GetOp(pc, opcode, data)) return false;
+    if (opcode != OP_RETURN) return false;
+
+    // Get data block
+    if (!script.GetOp(pc, opcode, data)) return false;
+
+    if (data.size() < 5) return false;
+    if (data[0] != 'B') return false;
+    if (data[1] != BTX_FORMAT_VERSION) return false;
+    if (data[2] != cgResultTxType) return false;
+
+    nEventId = *((uint16_t*)&data[3]);
 
     return true;
 }
@@ -863,45 +693,6 @@ bool CPeerlessSpreadsEvent::ToOpCode(CPeerlessSpreadsEvent pse, std::string &opC
     return true;
 }
 
-void AddEvent(CPeerlessEvent event)
-{
-    CEventsDB db{};
-    db.Save(event);
-}
-
-void AddMapping(CMapping mapping)
-{
-    CMappingsDB db{};
-    db.Save(mapping);
-}
-
-void AddResult(CPeerlessResult res)
-{
-    CResultsDB db{};
-    db.Save(res);
-}
-
-/**
- * Updates a peerless event object with spread odds for the given event ID.
- */
-void SetEventSpreadOdds(CPeerlessSpreadsEvent spreadEvent) {
-    CEventsDB edb{};
-    EventsIndex eventIndex{};
-
-    // First check a peerless event exists in the event index.
-    if (edb.Read(eventIndex) && eventIndex.count(spreadEvent.nEventId) > 0) {
-        // Get the event object from the index and update the spread odds values.
-        CPeerlessEvent plEvent = eventIndex.find(spreadEvent.nEventId)->second;
-
-        plEvent.nSpreadPoints    = spreadEvent.nPoints;
-        plEvent.nSpreadHomeOdds  = spreadEvent.nHomeOdds;
-        plEvent.nSpreadAwayOdds  = spreadEvent.nAwayOdds;
-
-        // Update the event in the event index.
-        eventIndex[spreadEvent.nEventId] = plEvent;
-        edb.Write(eventIndex);
-    }
-}
 
 /**
  * Split a CPeerlessTotalsEvent OpCode string into byte components and store in peerless totals
@@ -965,28 +756,6 @@ bool CPeerlessTotalsEvent::ToOpCode(CPeerlessTotalsEvent pte, std::string &opCod
 }
 
 /**
- * Updates a peerless event object with totals odds.
- */
-void SetEventTotalOdds(CPeerlessTotalsEvent totalsEvent) {
-    CEventsDB edb{};
-    EventsIndex eventIndex{};
-
-    // First check a peerless event exists in the event index.
-    if (edb.Read(eventIndex) && eventIndex.count(totalsEvent.nEventId) > 0) {
-        // Get the event object from the index and update the totals odds values.
-        CPeerlessEvent plEvent = eventIndex.find(totalsEvent.nEventId)->second;
-
-        plEvent.nTotalPoints    = totalsEvent.nPoints;
-        plEvent.nTotalOverOdds  = totalsEvent.nOverOdds;
-        plEvent.nTotalUnderOdds = totalsEvent.nUnderOdds;
-
-        // Update the event in the event index.
-        eventIndex[totalsEvent.nEventId] = plEvent;
-        edb.Write(eventIndex);
-    }
-}
-
-/**
  * Split a CPeerlessEventPatch OpCode string into byte components and update a peerless
  * event object.
  *
@@ -1042,119 +811,6 @@ bool CPeerlessEventPatch::ToOpCode(CPeerlessEventPatch pe, std::string &opCode)
     }
 
     return true;
-}
-
-
-/**
- * Updates a peerless event object with new values.
- */
-void ApplyEventPatch (CPeerlessEventPatch plEventPatch) {
-    CEventsDB edb{};
-    EventsIndex eventIndex{};
-
-    // First check a peerless event exists in the event index.
-    if (edb.Read(eventIndex) && eventIndex.count(plEventPatch.nEventId) > 0) {
-
-        // Get the event object from the index and update the totals odds values.
-        CPeerlessEvent plEvent = eventIndex.find(plEventPatch.nEventId)->second;
-
-        plEvent.nStartTime = plEventPatch.nStartTime;
-
-        // Update the event in the event index.
-        eventIndex[plEventPatch.nEventId] = plEvent;
-        edb.Write(eventIndex);
-    }
-}
-
-/**
- * Updates a peerless event object with total bet accumulators.
- */
-void SetEventAccummulators (CPeerlessBet plBet, CAmount betAmount) {
-
-    CEventsDB edb{};
-    EventsIndex eventsIndex{};
-
-    uint64_t oddsDivisor  = Params().OddsDivisor();
-    uint64_t betXPermille = Params().BetXPermille();
-
-    // Check the events index actually has events
-    if (edb.Read(eventsIndex) && eventsIndex.size() > 0) {
-        CPeerlessEvent pe = eventsIndex.find(plBet.nEventId)->second;
-        CAmount payout = 0 * COIN;
-        CAmount burn = 0;
-        CAmount winnings = 0;
-
-        // Check which outcome the bet was placed on and add to accumulators
-        if (plBet.nOutcome == moneyLineWin){
-            winnings = betAmount * pe.nHomeOdds;
-            // To avoid internal overflow issues, first divide and then multiply.
-            // This will not cause inaccuracy, because the Odds (and thus the winnings) are scaled by a
-            // factor 10000 (the oddsDivisor)
-            burn = (winnings - betAmount * oddsDivisor) / 2000 * betXPermille;
-            payout = winnings - burn;
-            pe.nMoneyLineHomePotentialLiability += payout / COIN ;
-            pe.nMoneyLineHomeBets += 1;
-
-        }else if (plBet.nOutcome == moneyLineLose){
-            winnings = betAmount * pe.nAwayOdds;
-            burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
-            payout = winnings - burn;
-            pe.nMoneyLineAwayPotentialLiability += payout / COIN ;
-            pe.nMoneyLineAwayBets += 1;
-
-        }else if (plBet.nOutcome == moneyLineDraw){
-            winnings = betAmount * pe.nDrawOdds;
-            burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
-            payout = winnings - burn;
-            pe.nMoneyLineDrawPotentialLiability += payout / COIN ;
-            pe.nMoneyLineDrawBets += 1;
-
-        }else if (plBet.nOutcome == spreadHome){
-            winnings = betAmount * pe.nSpreadHomeOdds;
-            burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
-            payout = winnings - burn;
-
-            pe.nSpreadHomePotentialLiability += payout / COIN ;
-            pe.nSpreadPushPotentialLiability += betAmount / COIN;
-            pe.nSpreadHomeBets += 1;
-            pe.nSpreadPushBets += 1;
-
-        }else if (plBet.nOutcome == spreadAway){
-            winnings = betAmount * pe.nSpreadAwayOdds;
-            burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
-            payout = winnings - burn;
-
-            pe.nSpreadAwayPotentialLiability += payout / COIN ;
-            pe.nSpreadPushPotentialLiability += betAmount / COIN;
-            pe.nSpreadAwayBets += 1;
-            pe.nSpreadPushBets += 1;
-
-        }else if (plBet.nOutcome == totalOver){
-            winnings = betAmount * pe.nTotalOverOdds;
-            burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
-            payout = winnings - burn;
-
-            pe.nTotalOverPotentialLiability += payout / COIN ;
-            pe.nTotalPushPotentialLiability += betAmount / COIN;
-            pe.nTotalOverBets += 1;
-            pe.nTotalPushBets += 1;
-
-        }else if (plBet.nOutcome == totalUnder){
-            winnings = betAmount * pe.nTotalUnderOdds;
-            burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
-            payout = winnings - burn;
-
-            pe.nTotalUnderPotentialLiability += payout / COIN;
-            pe.nTotalPushPotentialLiability += betAmount / COIN;
-            pe.nTotalUnderBets += 1;
-            pe.nTotalPushBets += 1;
-
-        }
-
-        eventsIndex[plBet.nEventId] = pe;
-        edb.Write(eventsIndex);
-    }
-
 }
 
 MappingTypes CMapping::GetType() const
@@ -1426,6 +1082,184 @@ bool CResultsDB::Read(ResultsIndex& resultsIndex)
     return db.Read(0, resultsIndex);
 }
 
+/**
+ * Validate the transaction to ensure it has been posted by an oracle node.
+ *
+ * @param txin  TX vin input hash.
+ * @return      Bool
+ */
+bool IsValidOracleTx(const CTxIn &txin)
+{
+    COutPoint prevout = txin.prevout;
+    std::vector<string> oracleAddrs = Params().OracleWalletAddrs();
+
+    uint256 hashBlock;
+    CTransaction txPrev;
+    if (GetTransaction(prevout.hash, txPrev, hashBlock, true)) {
+
+        const CTxOut &prevTxOut = txPrev.vout[prevout.n];
+        std::string scriptPubKey = prevTxOut.scriptPubKey.ToString();
+
+        txnouttype type;
+        vector<CTxDestination> prevAddrs;
+        int nRequired;
+
+        if (ExtractDestinations(prevTxOut.scriptPubKey, type, prevAddrs, nRequired)) {
+            for (const CTxDestination &prevAddr : prevAddrs) {
+                if (std::find(oracleAddrs.begin(), oracleAddrs.end(), CBitcoinAddress(prevAddr).ToString()) != oracleAddrs.end()) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Takes a payout vector and aggregates the total WGR that is required to pay out all bets.
+ * We also calculate and add the OMNO and dev fund rewards.
+ *
+ * @param vExpectedPayouts  A vector containing all the winning bets that need to be paid out.
+ * @param nMNBetReward  The Oracle masternode reward.
+ * @return
+ */
+int64_t GetBlockPayouts(std::vector<CBetOut>& vExpectedPayouts, CAmount& nMNBetReward)
+{
+    CAmount profitAcc = 0;
+    CAmount nPayout = 0;
+    CAmount totalAmountBet = 0;
+
+    // Set the OMNO and Dev reward addresses
+    std::string devPayoutAddr  = Params().DevPayoutAddr();
+    std::string OMNOPayoutAddr = Params().OMNOPayoutAddr();
+
+    // Loop over the payout vector and aggregate values.
+    for (unsigned i = 0; i < vExpectedPayouts.size(); i++) {
+        CAmount betValue = vExpectedPayouts[i].nBetValue;
+        CAmount payValue = vExpectedPayouts[i].nValue;
+
+        totalAmountBet += betValue;
+        profitAcc += payValue - betValue;
+        nPayout += payValue;
+    }
+
+    if (vExpectedPayouts.size() > 0) {
+        // Calculate the OMNO reward and the Dev reward.
+        CAmount nOMNOReward = (CAmount)(profitAcc * Params().OMNORewardPermille() / (1000.0 - Params().BetXPermille()));
+        CAmount nDevReward  = (CAmount)(profitAcc * Params().DevRewardPermille() / (1000.0 - Params().BetXPermille()));
+
+        // Add both reward payouts to the payout vector.
+        vExpectedPayouts.emplace_back(nDevReward, GetScriptForDestination(CBitcoinAddress(devPayoutAddr).Get()));
+        vExpectedPayouts.emplace_back(nOMNOReward, GetScriptForDestination(CBitcoinAddress(OMNOPayoutAddr).Get()));
+
+        nPayout += nDevReward + nOMNOReward;
+    }
+
+    return  nPayout;
+}
+
+/**
+ * Takes a payout vector and aggregates the total WGR that is required to pay out all CGLotto bets.
+ *
+ * @param vexpectedCGPayouts  A vector containing all the winning bets that need to be paid out.
+ * @param nMNBetReward  The Oracle masternode reward.
+ * @return
+ */
+int64_t GetCGBlockPayouts(std::vector<CBetOut>& vexpectedCGPayouts, CAmount& nMNBetReward)
+{
+    CAmount nPayout = 0;
+
+    for (unsigned i = 0; i < vexpectedCGPayouts.size(); i++) {
+        CAmount payValue = vexpectedCGPayouts[i].nValue;
+        nPayout += payValue;
+    }
+
+    return  nPayout;
+}
+
+/**
+ * Validates the payout block to ensure all bet payout amounts and payout addresses match their expected values.
+ *
+ * @param vExpectedPayouts -  The bet payout vector.
+ * @param nHeight - The current chain height.
+ * @return
+ */
+bool IsBlockPayoutsValid(std::vector<CBetOut> vExpectedPayouts, CBlock block)
+{
+    unsigned long size = vExpectedPayouts.size();
+
+    // If we have payouts to validate.
+    if (size > 0) {
+
+        CTransaction &tx = block.vtx[1];
+
+        // Get the vin staking value so we can use it to find out how many staking TX in the vouts.
+        const CTxIn &txin         = tx.vin[0];
+        COutPoint prevout         = txin.prevout;
+        unsigned int numStakingTx = 0;
+        CAmount stakeAmount       = 0;
+
+        uint256 hashBlock;
+        CTransaction txPrev;
+
+        if (GetTransaction(prevout.hash, txPrev, hashBlock, true)) {
+            const CTxOut &prevTxOut = txPrev.vout[prevout.n];
+            stakeAmount = prevTxOut.nValue;
+        }
+
+        // Count the coinbase and staking vouts in the current block TX.
+        CAmount totalStakeAcc = 0;
+        for (unsigned int i = 0; i < tx.vout.size(); i++) {
+            const CTxOut &txout = tx.vout[i];
+            CAmount voutValue   = txout.nValue;
+
+            if (totalStakeAcc < stakeAmount) {
+                numStakingTx++;
+            }
+            else {
+                break;
+            }
+
+            totalStakeAcc += voutValue;
+        }
+        if (vExpectedPayouts.size() + numStakingTx > tx.vout.size() - 1) {
+            LogPrintf("%s - Incorrect number of transactions in block %s\n", __func__, block.GetHash().ToString());
+            return false;
+        }
+
+        // Validate the payout block against the expected payouts vector. If all payout amounts and payout addresses match then we have a valid payout block.
+        for (unsigned int j = 0; j < vExpectedPayouts.size(); j++) {
+            unsigned int i = numStakingTx + j;
+
+            const CTxOut &txout = tx.vout[i];
+            CAmount voutValue   = txout.nValue;
+            CAmount vExpected   = vExpectedPayouts[i - numStakingTx].nValue;
+
+            LogPrintf("Bet Amount %li  - Expected Bet Amount: %li \n", voutValue, vExpected);
+
+            // Get the bet payout address.
+            CTxDestination betAddr;
+            ExtractDestination(tx.vout[i].scriptPubKey, betAddr);
+            std::string betAddrS = CBitcoinAddress(betAddr).ToString();
+
+            // Get the expected payout address.
+            CTxDestination expectedAddr;
+            ExtractDestination(vExpectedPayouts[i - numStakingTx].scriptPubKey, expectedAddr);
+            std::string expectedAddrS = CBitcoinAddress(expectedAddr).ToString();
+
+            LogPrintf("Bet Address %s  - Expected Bet Address: %s \n", betAddrS.c_str(), expectedAddrS.c_str());
+
+            if (vExpected != voutValue && betAddrS != expectedAddrS) {
+                LogPrintf("Validation failed! \n");
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 
 /**
  * Check a given block to see if it contains a Peerless result TX.
@@ -1478,6 +1312,62 @@ std::vector<CPeerlessResult> getEventResults( int height )
 
     return results;
 }
+
+/**
+ * Checks a given block for any Chain Games results.
+ *
+ * @param height The block we want to check for the result.
+ * @return results array.
+ */
+std::pair<std::vector<CChainGamesResult>,std::vector<std::string>> getCGLottoEventResults(int height)
+{
+    std::vector<CChainGamesResult> chainGameResults;
+    std::vector<std::string> blockTotalValues;
+    CAmount totalBlockValue = 0;
+
+    // Get the current block so we can look for any results in it.
+    CBlockIndex *resultsBocksIndex = chainActive[height];
+
+    CBlock block;
+    ReadBlockFromDisk(block, resultsBocksIndex);
+
+    int blockTime = block.GetBlockTime();
+
+    for (CTransaction& tx : block.vtx) {
+        // Ensure the result TX has been posted by Oracle wallet by looking at the TX vins.
+        const CTxIn &txin = tx.vin[0];
+        uint256 hashBlock;
+        CTransaction txPrev;
+
+        bool validResultTx = IsValidOracleTx(txin);
+
+        if (validResultTx) {
+            // Look for result OP RETURN code in the tx vouts.
+            for (unsigned int i = 0; i < tx.vout.size(); i++) {
+                CScript script = tx.vout[i].scriptPubKey;
+
+                CChainGamesResult cgResult;
+                if (cgResult.FromScript(script)) {
+                    chainGameResults.push_back(cgResult);
+                }
+            }
+        }
+    }
+
+    unsigned long long LGTotal = blockTime + totalBlockValue;
+    char strTotal[256];
+    sprintf(strTotal, "%lld", LGTotal);
+
+    // If a CGLotto result is found, append total block value to each result
+    if (chainGameResults.size() != 0) {
+        for (unsigned int i = 0; i < chainGameResults.size(); i++) {
+            blockTotalValues.emplace_back(strTotal);
+        }
+    }
+
+    return std::make_pair(chainGameResults,blockTotalValues);
+}
+
 
 // TODO function will need to be refactored and cleaned up at a later stage as we have had to make rapid and frequent code changes.
 /**
@@ -1890,84 +1780,6 @@ std::vector<CBetOut> GetBetPayouts(int height)
     return vExpectedPayouts;
 }
 
-bool CChainGamesResult::FromScript(CScript script) {
-    // LogPrintf("%s - %s\n", __func__, script.ToString());
-
-    CScript::const_iterator pc = script.begin();
-    std::vector<unsigned char> data;
-    opcodetype opcode;
-
-    // Check that we are parsing an OP_RETURN script
-    if (!script.GetOp(pc, opcode, data)) return false;
-    if (opcode != OP_RETURN) return false;
-
-    // Get data block
-    if (!script.GetOp(pc, opcode, data)) return false;
-
-    if (data.size() < 5) return false;
-    if (data[0] != 'B') return false;
-    if (data[1] != BTX_FORMAT_VERSION) return false;
-    if (data[2] != cgResultTxType) return false;
-
-    nEventId = *((uint16_t*)&data[3]);
-
-    return true;
-}
-/**
- * Checks a given block for any Chain Games results.
- *
- * @param height The block we want to check for the result.
- * @return results array.
- */
-std::pair<std::vector<CChainGamesResult>,std::vector<std::string>> getCGLottoEventResults(int height)
-{
-    std::vector<CChainGamesResult> chainGameResults;
-    std::vector<std::string> blockTotalValues;
-    CAmount totalBlockValue = 0;
-
-    // Get the current block so we can look for any results in it.
-    CBlockIndex *resultsBocksIndex = chainActive[height];
-
-    CBlock block;
-    ReadBlockFromDisk(block, resultsBocksIndex);
-
-    int blockTime = block.GetBlockTime();
-
-    for (CTransaction& tx : block.vtx) {
-        // Ensure the result TX has been posted by Oracle wallet by looking at the TX vins.
-        const CTxIn &txin = tx.vin[0];
-        uint256 hashBlock;
-        CTransaction txPrev;
-
-        bool validResultTx = IsValidOracleTx(txin);
-
-        if (validResultTx) {
-            // Look for result OP RETURN code in the tx vouts.
-            for (unsigned int i = 0; i < tx.vout.size(); i++) {
-                CScript script = tx.vout[i].scriptPubKey;
-
-                CChainGamesResult cgResult;
-                if (cgResult.FromScript(script)) {
-                    chainGameResults.push_back(cgResult);
-                }
-            }
-        }
-    }
-
-    unsigned long long LGTotal = blockTime + totalBlockValue;
-    char strTotal[256];
-    sprintf(strTotal, "%lld", LGTotal);
-
-    // If a CGLotto result is found, append total block value to each result
-    if (chainGameResults.size() != 0) {
-        for (unsigned int i = 0; i < chainGameResults.size(); i++) {
-            blockTotalValues.emplace_back(strTotal);
-        }
-    }
-
-    return std::make_pair(chainGameResults,blockTotalValues);
-}
-
 /**
  * Creates the bet payout vector for all winning CGLotto events.
  *
@@ -2142,4 +1954,217 @@ std::vector<CBetOut> GetCGLottoBetPayouts (int height)
     }
 
     return vexpectedCGLottoBetPayouts;
+}
+
+void ParseBettingTx(const CTransaction& tx)
+{
+    // Ensure the event TX has come from Oracle wallet.
+    const CTxIn &txin = tx.vin[0];
+    bool validOracleTx = IsValidOracleTx(txin);
+
+    // Search for any new bets
+    for (unsigned int i = 0; i < tx.vout.size(); i++) {
+        const CTxOut& txout = tx.vout[i];
+        std::string s = txout.scriptPubKey.ToString();
+
+        if (0 == strncmp(s.c_str(), "OP_RETURN", 9)) {
+            vector<unsigned char> v = ParseHex(s.substr(9, string::npos));
+            std::string opCode(v.begin(), v.end());
+
+            CPeerlessBet plBet;
+            if (CPeerlessBet::FromOpCode(opCode, plBet)) {
+                EventsIndex eventsIndex{};
+                CAmount betAmount{txout.nValue};
+                uint64_t oddsDivisor{Params().OddsDivisor()};
+                uint64_t betXPermille{Params().BetXPermille()};
+
+                // Check the events index actually has events
+                if (bettingdb.events->Read(eventsIndex) && eventsIndex.size() > 0) {
+                    CPeerlessEvent pe = eventsIndex.find(plBet.nEventId)->second;
+                    CAmount payout = 0 * COIN;
+                    CAmount burn = 0;
+                    CAmount winnings = 0;
+
+                    // Check which outcome the bet was placed on and add to accumulators
+                    if (plBet.nOutcome == moneyLineWin){
+                        winnings = betAmount * pe.nHomeOdds;
+                        // To avoid internal overflow issues, first divide and then multiply.
+                        // This will not cause inaccuracy, because the Odds (and thus the winnings) are scaled by a
+                        // factor 10000 (the oddsDivisor)
+                        burn = (winnings - betAmount * oddsDivisor) / 2000 * betXPermille;
+                        payout = winnings - burn;
+                        pe.nMoneyLineHomePotentialLiability += payout / COIN ;
+                        pe.nMoneyLineHomeBets += 1;
+
+                    }else if (plBet.nOutcome == moneyLineLose){
+                        winnings = betAmount * pe.nAwayOdds;
+                        burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
+                        payout = winnings - burn;
+                        pe.nMoneyLineAwayPotentialLiability += payout / COIN ;
+                        pe.nMoneyLineAwayBets += 1;
+
+                    }else if (plBet.nOutcome == moneyLineDraw){
+                        winnings = betAmount * pe.nDrawOdds;
+                        burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
+                        payout = winnings - burn;
+                        pe.nMoneyLineDrawPotentialLiability += payout / COIN ;
+                        pe.nMoneyLineDrawBets += 1;
+
+                    }else if (plBet.nOutcome == spreadHome){
+                        winnings = betAmount * pe.nSpreadHomeOdds;
+                        burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
+                        payout = winnings - burn;
+
+                        pe.nSpreadHomePotentialLiability += payout / COIN ;
+                        pe.nSpreadPushPotentialLiability += betAmount / COIN;
+                        pe.nSpreadHomeBets += 1;
+                        pe.nSpreadPushBets += 1;
+
+                    }else if (plBet.nOutcome == spreadAway){
+                        winnings = betAmount * pe.nSpreadAwayOdds;
+                        burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
+                        payout = winnings - burn;
+
+                        pe.nSpreadAwayPotentialLiability += payout / COIN ;
+                        pe.nSpreadPushPotentialLiability += betAmount / COIN;
+                        pe.nSpreadAwayBets += 1;
+                        pe.nSpreadPushBets += 1;
+
+                    }else if (plBet.nOutcome == totalOver){
+                        winnings = betAmount * pe.nTotalOverOdds;
+                        burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
+                        payout = winnings - burn;
+
+                        pe.nTotalOverPotentialLiability += payout / COIN ;
+                        pe.nTotalPushPotentialLiability += betAmount / COIN;
+                        pe.nTotalOverBets += 1;
+                        pe.nTotalPushBets += 1;
+
+                    }else if (plBet.nOutcome == totalUnder){
+                        winnings = betAmount * pe.nTotalUnderOdds;
+                        burn = (winnings - betAmount*oddsDivisor) / 2000 * betXPermille;
+                        payout = winnings - burn;
+
+                        pe.nTotalUnderPotentialLiability += payout / COIN;
+                        pe.nTotalPushPotentialLiability += betAmount / COIN;
+                        pe.nTotalUnderBets += 1;
+                        pe.nTotalPushBets += 1;
+
+                    }
+
+                    eventsIndex[plBet.nEventId] = pe;
+                    bettingdb.events->Write(eventsIndex);
+                }
+            }
+        }
+    }
+
+    // If a valid OMNO transaction.
+    if (validOracleTx) {
+
+        for (unsigned int i = 0; i < tx.vout.size(); i++) {
+            const CTxOut& txout = tx.vout[i];
+            std::string s = txout.scriptPubKey.ToString();
+
+            if (0 == strncmp(s.c_str(), "OP_RETURN", 9)) {
+                vector<unsigned char> v = ParseHex(s.substr(9, string::npos));
+                std::string opCode(v.begin(), v.end());
+
+                // TODO - Optimise the OP code validation, we don't need to compare current OP code against all TX types.
+                // if it matches any TX type the rest should be skipped.
+
+                // If mapping found then add it to the relating map index and write the map index to disk.
+                CMapping mapping{};
+                if (CMapping::FromOpCode(opCode, mapping)) {
+                    bettingdb.mappings->Save(mapping);
+                }
+
+                // If events found in block add them to the events index.
+                CPeerlessEvent plEvent{};
+                if (CPeerlessEvent::FromOpCode(opCode, plEvent)) {
+                    bettingdb.events->Save(plEvent);
+                }
+
+                // If event patch found in block apply them to the events.
+                CPeerlessEventPatch plEventPatch{};
+                if (CPeerlessEventPatch::FromOpCode(opCode, plEventPatch)) {
+                    EventsIndex eventIndex{};
+                    // First check a peerless event exists in the event index.
+                    if (bettingdb.events->Read(eventIndex) && eventIndex.count(plEventPatch.nEventId) > 0) {
+                        // Get the event object from the index and update the totals odds values.
+                        CPeerlessEvent plEvent = eventIndex.find(plEventPatch.nEventId)->second;
+
+                        plEvent.nStartTime = plEventPatch.nStartTime;
+
+                        // Update the event in the event index.
+                        eventIndex[plEventPatch.nEventId] = plEvent;
+                        bettingdb.events->Write(eventIndex);
+                    }
+                }
+
+                // If results found in block add result to result index.
+                CPeerlessResult plResult{};
+                if (CPeerlessResult::FromOpCode(opCode, plResult)) {
+                    bettingdb.results->Save(plResult);
+                }
+
+                // If update money line odds TX found in block, update the event index.
+                CPeerlessUpdateOdds puo{};
+                if (CPeerlessUpdateOdds::FromOpCode(opCode, puo)) {
+                    EventsIndex eventIndex{};
+                    // First check a peerless event exists in the event index.
+                    if (bettingdb.events->Read(eventIndex) && eventIndex.count(puo.nEventId) > 0) {
+                        // Get the event object from the index and update the money line odds values.
+                        CPeerlessEvent plEvent = eventIndex.find(puo.nEventId)->second;
+
+                        plEvent.nHomeOdds = puo.nHomeOdds;
+                        plEvent.nAwayOdds = puo.nAwayOdds;
+                        plEvent.nDrawOdds = puo.nDrawOdds;
+
+                        // Update the event in the event index.
+                        eventIndex[puo.nEventId] = plEvent;
+                        bettingdb.events->Write(eventIndex);
+                    }
+                }
+
+                // If spread odds TX found then update the spread odds for that event object.
+                CPeerlessSpreadsEvent spreadEvent{};
+                if (CPeerlessSpreadsEvent::FromOpCode(opCode, spreadEvent)) {
+                    EventsIndex eventIndex{};
+                    // First check a peerless event exists in the event index.
+                    if (bettingdb.events->Read(eventIndex) && eventIndex.count(spreadEvent.nEventId) > 0) {
+                        // Get the event object from the index and update the spread odds values.
+                        CPeerlessEvent plEvent = eventIndex.find(spreadEvent.nEventId)->second;
+
+                        plEvent.nSpreadPoints    = spreadEvent.nPoints;
+                        plEvent.nSpreadHomeOdds  = spreadEvent.nHomeOdds;
+                        plEvent.nSpreadAwayOdds  = spreadEvent.nAwayOdds;
+
+                        // Update the event in the event index.
+                        eventIndex[spreadEvent.nEventId] = plEvent;
+                        bettingdb.events->Write(eventIndex);
+                    }
+                }
+
+                // If total odds TX found then update the total odds for that event object.
+                CPeerlessTotalsEvent totalsEvent{};
+                if (CPeerlessTotalsEvent::FromOpCode(opCode, totalsEvent)) {
+                    EventsIndex eventIndex{};
+                    // First check a peerless event exists in the event index.
+                    if (bettingdb.events->Read(eventIndex) && eventIndex.count(totalsEvent.nEventId) > 0) {
+                        // Get the event object from the index and update the totals odds values.
+                        CPeerlessEvent plEvent = eventIndex.find(totalsEvent.nEventId)->second;
+
+                        plEvent.nTotalPoints    = totalsEvent.nPoints;
+                        plEvent.nTotalOverOdds  = totalsEvent.nOverOdds;
+                        plEvent.nTotalUnderOdds = totalsEvent.nUnderOdds;
+
+                        // Update the event in the event index.
+                        eventIndex[totalsEvent.nEventId] = plEvent;
+                        bettingdb.events->Write(eventIndex);
+                    }
+                }
+            }
+        }
+    }
 }

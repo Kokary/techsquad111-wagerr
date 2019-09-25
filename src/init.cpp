@@ -251,6 +251,13 @@ void PrepareShutdown()
         zerocoinDB = NULL;
         delete pSporkDB;
         pSporkDB = NULL;
+
+        delete bettingdb.mappings;
+        bettingdb.mappings = nullptr;
+        delete bettingdb.events;
+        bettingdb.events = nullptr;
+        delete bettingdb.results;
+        bettingdb.results = nullptr;
     }
 #ifdef ENABLE_WALLET
     if (pwalletMain)
@@ -1475,6 +1482,9 @@ bool AppInit2()
                 delete pblocktree;
                 delete zerocoinDB;
                 delete pSporkDB;
+                delete bettingdb.mappings;
+                delete bettingdb.events;
+                delete bettingdb.results;
 
                 //WAGERR specific: zerocoin and spork DB's
                 zerocoinDB = new CZerocoinDB(0, false, fReindex);
@@ -1484,6 +1494,10 @@ bool AppInit2()
                 pcoinsdbview = new CCoinsViewDB(nCoinDBCache, false, fReindex);
                 pcoinscatcher = new CCoinsViewErrorCatcher(pcoinsdbview);
                 pcoinsTip = new CCoinsViewCache(pcoinscatcher);
+
+                bettingdb.mappings = new CMappingsDB{};
+                bettingdb.events = new CEventsDB{};
+                bettingdb.results = new CResultsDB{};
 
                 if (fReindex)
                     pblocktree->WriteReindexing(true);

@@ -101,18 +101,6 @@ class CBetOut : public CTxOut {
     }
 };
 
-/** Ensures a TX has come from an OMNO wallet. **/
-bool IsValidOracleTx(const CTxIn &txin);
-
-/** Aggregates the amount of WGR to be minted to pay out all bets as well as dev and OMNO rewards. **/
-int64_t GetBlockPayouts(std::vector<CBetOut>& vExpectedPayouts, CAmount& nMNBetReward);
-
-/** Aggregates the amount of WGR to be minted to pay out all CG Lotto winners as well as OMNO rewards. **/
-int64_t GetCGBlockPayouts(std::vector<CBetOut>& vexpectedCGPayouts, CAmount& nMNBetReward);
-
-/** Validating the payout block using the payout vector. **/
-bool IsBlockPayoutsValid(std::vector<CBetOut> vExpectedPayouts, CBlock block);
-
 class CPeerlessEvent
 {
 public:
@@ -400,7 +388,7 @@ public:
     static std::string ToTypeName(MappingTypes type);
     static MappingTypes FromTypeName(const std::string& name);
 
-    static bool ToOpCode(CMapping &mapping, std::string &opCode);
+    static bool ToOpCode(const CMapping& mapping, std::string &opCode);
     static bool FromOpCode(std::string opCode, CMapping &mapping);
 
     ADD_SERIALIZE_METHODS;
@@ -429,6 +417,7 @@ public:
     bool Save(const CMapping& mapping);
     bool Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex);
     bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex);
+
 private:
     CLevelDBWrapper db;
 };
@@ -448,6 +437,7 @@ public:
     bool Erase(const CPeerlessResult& plEvent);
     bool Write(const EventsIndex& eventsIndex);
     bool Read(EventsIndex& eventsIndex);
+
 private:
     CLevelDBWrapper db;
 };
@@ -467,9 +457,31 @@ public:
     bool Erase(const CPeerlessResult& plResult);
     bool Write(const ResultsIndex& resultsIndex);
     bool Read(ResultsIndex& resultsIndex);
+
 private:
     CLevelDBWrapper db;
 };
+
+/** Container for several db objects */
+extern struct BettingDB
+{
+    CMappingsDB* mappings;
+    CResultsDB* results;
+    CEventsDB* events;
+} bettingdb;
+
+
+/** Ensures a TX has come from an OMNO wallet. **/
+bool IsValidOracleTx(const CTxIn &txin);
+
+/** Aggregates the amount of WGR to be minted to pay out all bets as well as dev and OMNO rewards. **/
+int64_t GetBlockPayouts(std::vector<CBetOut>& vExpectedPayouts, CAmount& nMNBetReward);
+
+/** Aggregates the amount of WGR to be minted to pay out all CG Lotto winners as well as OMNO rewards. **/
+int64_t GetCGBlockPayouts(std::vector<CBetOut>& vexpectedCGPayouts, CAmount& nMNBetReward);
+
+/** Validating the payout block using the payout vector. **/
+bool IsBlockPayoutsValid(std::vector<CBetOut> vExpectedPayouts, CBlock block);
 
 /** Find peerless events. **/
 std::vector<CPeerlessResult> getEventResults(int height);
@@ -483,25 +495,6 @@ std::vector<CBetOut> GetBetPayouts(int height);
 /** Get the chain games winner and return the payout vector. **/
 std::vector<CBetOut> GetCGLottoBetPayouts(int height);
 
-void AddEvent(CPeerlessEvent event);
-
-void AddMapping(CMapping mapping);
-
-void AddResult(CPeerlessResult res);
-
-/** Set a peerless event spread odds **/
-void SetEventSpreadOdds(CPeerlessSpreadsEvent sEventOdds);
-
-/** Set a peerless event total odds **/
-void SetEventTotalOdds(CPeerlessTotalsEvent tEventOdds);
-
-/** Set a peerless event new values **/
-void ApplyEventPatch(CPeerlessEventPatch plEventPatch);
-
-/** Set a peerless event money line odds **/
-void SetEventMLOdds(CPeerlessUpdateOdds mEventOdds);
-
-/** Set a peerless event accumulators **/
-void SetEventAccummulators(CPeerlessBet plBet, CAmount betAmount);
+void ParseBettingTx(const CTransaction& tx);
 
 #endif // WAGERR_BET_H
