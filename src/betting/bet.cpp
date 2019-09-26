@@ -24,7 +24,7 @@ static constexpr std::size_t dbWrapperCacheSize{10 << 20};
 #define PTE_OP_STRLEN 34
 #define PEP_OP_STRLEN 22
 
-BettingDB bettingdb = {};
+BettingContext bettingContext = {};
 
 namespace
 {
@@ -1979,7 +1979,7 @@ void ParseBettingTx(const CTransaction& tx)
                 uint64_t betXPermille{Params().BetXPermille()};
 
                 // Check the events index actually has events
-                if (bettingdb.events->Read(eventsIndex) && eventsIndex.size() > 0) {
+                if (bettingContext.events->Read(eventsIndex) && eventsIndex.size() > 0) {
                     CPeerlessEvent pe = eventsIndex.find(plBet.nEventId)->second;
                     CAmount payout = 0 * COIN;
                     CAmount burn = 0;
@@ -2053,7 +2053,7 @@ void ParseBettingTx(const CTransaction& tx)
                     }
 
                     eventsIndex[plBet.nEventId] = pe;
-                    bettingdb.events->Write(eventsIndex);
+                    bettingContext.events->Write(eventsIndex);
                 }
             }
         }
@@ -2076,13 +2076,13 @@ void ParseBettingTx(const CTransaction& tx)
                 // If mapping found then add it to the relating map index and write the map index to disk.
                 CMapping mapping{};
                 if (CMapping::FromOpCode(opCode, mapping)) {
-                    bettingdb.mappings->Save(mapping);
+                    bettingContext.mappings->Save(mapping);
                 }
 
                 // If events found in block add them to the events index.
                 CPeerlessEvent plEvent{};
                 if (CPeerlessEvent::FromOpCode(opCode, plEvent)) {
-                    bettingdb.events->Save(plEvent);
+                    bettingContext.events->Save(plEvent);
                 }
 
                 // If event patch found in block apply them to the events.
@@ -2090,7 +2090,7 @@ void ParseBettingTx(const CTransaction& tx)
                 if (CPeerlessEventPatch::FromOpCode(opCode, plEventPatch)) {
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
-                    if (bettingdb.events->Read(eventIndex) && eventIndex.count(plEventPatch.nEventId) > 0) {
+                    if (bettingContext.events->Read(eventIndex) && eventIndex.count(plEventPatch.nEventId) > 0) {
                         // Get the event object from the index and update the totals odds values.
                         CPeerlessEvent plEvent = eventIndex.find(plEventPatch.nEventId)->second;
 
@@ -2098,14 +2098,14 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[plEventPatch.nEventId] = plEvent;
-                        bettingdb.events->Write(eventIndex);
+                        bettingContext.events->Write(eventIndex);
                     }
                 }
 
                 // If results found in block add result to result index.
                 CPeerlessResult plResult{};
                 if (CPeerlessResult::FromOpCode(opCode, plResult)) {
-                    bettingdb.results->Save(plResult);
+                    bettingContext.results->Save(plResult);
                 }
 
                 // If update money line odds TX found in block, update the event index.
@@ -2113,7 +2113,7 @@ void ParseBettingTx(const CTransaction& tx)
                 if (CPeerlessUpdateOdds::FromOpCode(opCode, puo)) {
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
-                    if (bettingdb.events->Read(eventIndex) && eventIndex.count(puo.nEventId) > 0) {
+                    if (bettingContext.events->Read(eventIndex) && eventIndex.count(puo.nEventId) > 0) {
                         // Get the event object from the index and update the money line odds values.
                         CPeerlessEvent plEvent = eventIndex.find(puo.nEventId)->second;
 
@@ -2123,7 +2123,7 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[puo.nEventId] = plEvent;
-                        bettingdb.events->Write(eventIndex);
+                        bettingContext.events->Write(eventIndex);
                     }
                 }
 
@@ -2132,7 +2132,7 @@ void ParseBettingTx(const CTransaction& tx)
                 if (CPeerlessSpreadsEvent::FromOpCode(opCode, spreadEvent)) {
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
-                    if (bettingdb.events->Read(eventIndex) && eventIndex.count(spreadEvent.nEventId) > 0) {
+                    if (bettingContext.events->Read(eventIndex) && eventIndex.count(spreadEvent.nEventId) > 0) {
                         // Get the event object from the index and update the spread odds values.
                         CPeerlessEvent plEvent = eventIndex.find(spreadEvent.nEventId)->second;
 
@@ -2142,7 +2142,7 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[spreadEvent.nEventId] = plEvent;
-                        bettingdb.events->Write(eventIndex);
+                        bettingContext.events->Write(eventIndex);
                     }
                 }
 
@@ -2151,7 +2151,7 @@ void ParseBettingTx(const CTransaction& tx)
                 if (CPeerlessTotalsEvent::FromOpCode(opCode, totalsEvent)) {
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
-                    if (bettingdb.events->Read(eventIndex) && eventIndex.count(totalsEvent.nEventId) > 0) {
+                    if (bettingContext.events->Read(eventIndex) && eventIndex.count(totalsEvent.nEventId) > 0) {
                         // Get the event object from the index and update the totals odds values.
                         CPeerlessEvent plEvent = eventIndex.find(totalsEvent.nEventId)->second;
 
@@ -2161,7 +2161,7 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[totalsEvent.nEventId] = plEvent;
-                        bettingdb.events->Write(eventIndex);
+                        bettingContext.events->Write(eventIndex);
                     }
                 }
             }

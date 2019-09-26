@@ -463,12 +463,12 @@ private:
 };
 
 /** Container for several db objects */
-extern struct BettingDB
+extern struct BettingContext
 {
     CMappingsDB* mappings;
     CResultsDB* results;
     CEventsDB* events;
-} bettingdb;
+} bettingContext;
 
 
 /** Ensures a TX has come from an OMNO wallet. **/

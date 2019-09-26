@@ -40,12 +40,12 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
                 "\nExamples:\n" +
                 HelpExampleCli("getmappingid", "") + HelpExampleRpc("getmappingid", ""));
 
+    const std::string name{params[1].get_str()};
+    const std::string mIndex{params[0].get_str()};
+    const MappingTypes type{CMapping::FromTypeName(mIndex)};
+    UniValue result{UniValue::VARR};
+    UniValue mappings{UniValue::VOBJ};
     MappingsIndex mappingsIndex{};
-    std::string mIndex = params[0].get_str();
-    std::string name   = params[1].get_str();
-    UniValue ret(UniValue::VARR);
-    UniValue mapping(UniValue::VOBJ);
-    const MappingTypes type = CMapping::FromTypeName(mIndex);
 
     if (CMapping::ToTypeName(type) != mIndex) {
         throw runtime_error("No mapping exist for the mapping index you provided.");
@@ -53,7 +53,7 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
 
     bool mappingFound  = false;
     unsigned int nFirstIndexFree = 0;
-    if (bettingdb.mappings->Read(type, mappingsIndex)) {
+    if (bettingContext.mappings->Read(type, mappingsIndex)) {
         // Check the map for the string name.
         bool FirstIndexFreeFound = false;
         map<uint32_t, CMapping>::iterator it;
@@ -61,9 +61,9 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
             LogPrintf("%s - mapping - it=[%d] nId=[%d] nMType=[%d] nVersion=[%d] [%s]\n", __func__, it->first, it->second.nId, it->second.nMType, it->second.nVersion, it->second.sName);
             if (!mappingFound) {
                 if (it->second.sName == name) {
-                    mapping.push_back(Pair("mapping-id", (uint64_t) it->second.nId));
-                    mapping.push_back(Pair("exists", true));
-                    mapping.push_back(Pair("mapping-index", mIndex));
+                    mappings.push_back(Pair("mapping-id", (uint64_t) it->second.nId));
+                    mappings.push_back(Pair("exists", true));
+                    mappings.push_back(Pair("mapping-index", mIndex));
                     mappingFound = true;
                 }
             }
@@ -80,21 +80,22 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
 
     // If no mapping found then create a new one and add to the given map index.
     if (!mappingFound) {
-        CMapping cm{};
-        cm.nMType   = type;
-        cm.nId      = nFirstIndexFree;
-        cm.sName    = name;
-        cm.nVersion = 1;
+        CMapping m{};
+        m.nMType   = type;
+        m.nId      = nFirstIndexFree;
+        m.sName    = name;
+        m.nVersion = 1;
 
-        bettingdb.mappings->Save(cm);
-        mapping.push_back(Pair("mapping-id",  (uint64_t) nFirstIndexFree));
-        mapping.push_back(Pair("exists", false));
-        mapping.push_back(Pair("mapping-index", mIndex));
+        if (bettingContext.mappings->Save(m)) {
+            mappings.push_back(Pair("mapping-id",  (uint64_t) nFirstIndexFree));
+            mappings.push_back(Pair("exists", false));
+            mappings.push_back(Pair("mapping-index", mIndex));
+        }
     }
 
-    ret.push_back(mapping);
+    result.push_back(mappings);
 
-    return ret;
+    return result;
 }
 
 /**
@@ -124,18 +125,19 @@ UniValue getmappingname(const UniValue& params, bool fHelp)
                 "\nExamples:\n" +
                 HelpExampleCli("getmappingname", "") + HelpExampleRpc("getmappingname", ""));
 
+    const std::string mIndex{params[0].get_str()};
+    const uint32_t id{static_cast<uint32_t>(std::stoul(params[1].get_str()))};
+    const MappingTypes type{CMapping::FromTypeName(mIndex)};
+    UniValue result{UniValue::VARR};
+    UniValue mapping{UniValue::VOBJ};
     MappingsIndex mappingsIndex{};
-    std::string mIndex = params[0].get_str();
-    uint32_t id        = std::stoi(params[1].get_str());
-    UniValue ret(UniValue::VARR);
-    UniValue mapping(UniValue::VOBJ);
-    const MappingTypes type = CMapping::FromTypeName(mIndex);
+
 
     if (CMapping::ToTypeName(type) != mIndex) {
         throw runtime_error("No mapping exist for the mapping index you provided.");
     }
 
-    if (!bettingdb.mappings->Read(type, mappingsIndex)) {
+    if (!bettingContext.mappings->Read(type, mappingsIndex)) {
         throw runtime_error("No mapping saved for the mapping type you provided.");
     }
 
@@ -156,7 +158,7 @@ UniValue getmappingname(const UniValue& params, bool fHelp)
         throw runtime_error("Currently no mapping name exists for the mapping name you provided.");
     }
 
-    ret.push_back(mapping);
+    result.push_back(mapping);
 
-    return ret;
+    return result;
 }
