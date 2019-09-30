@@ -902,8 +902,8 @@ bool CMapping::FromOpCode(std::string opCode, CMapping &cm)
 /**
  * Constructor for the CMapping database object.
  */
-CMappingsDB::CMappingsDB() :
-    db{GetDbName(), dbWrapperCacheSize}
+CMappingsDB::CMappingsDB(bool fWipe) :
+    db{GetDbName(), dbWrapperCacheSize, false, fWipe}
 {
 }
 
@@ -953,8 +953,8 @@ bool CMappingsDB::Read(MappingTypes mappingType, MappingsIndex& mappingsIndex)
 /**
  * Constructor for the events database object.
  */
-CEventsDB::CEventsDB() :
-    db{GetDbName(), dbWrapperCacheSize}
+CEventsDB::CEventsDB(bool fWipe) :
+    db{GetDbName(), dbWrapperCacheSize, false, fWipe}
 {
 }
 
@@ -1019,8 +1019,8 @@ bool CEventsDB::Read(EventsIndex& eventsIndex)
 /**
  * Constructor for the results database object.
  */
-CResultsDB::CResultsDB() :
-    db{GetDbName(), dbWrapperCacheSize}
+CResultsDB::CResultsDB(bool fWipe) :
+    db{GetDbName(), dbWrapperCacheSize, false, fWipe}
 {
 }
 

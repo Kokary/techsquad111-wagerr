@@ -1495,9 +1495,9 @@ bool AppInit2()
                 pcoinscatcher = new CCoinsViewErrorCatcher(pcoinsdbview);
                 pcoinsTip = new CCoinsViewCache(pcoinscatcher);
 
-                bettingContext.mappings = new CMappingsDB{};
-                bettingContext.events = new CEventsDB{};
-                bettingContext.results = new CResultsDB{};
+                bettingContext.mappings = new CMappingsDB{fReindex};
+                bettingContext.events = new CEventsDB{fReindex};
+                bettingContext.results = new CResultsDB{fReindex};
 
                 if (fReindex)
                     pblocktree->WriteReindexing(true);

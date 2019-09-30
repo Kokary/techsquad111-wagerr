@@ -442,11 +442,11 @@ public:
 
         /** Bet related parameters **/
         nBetStartHeight = 251;                                          // The block that betting protocols become active (Regtest).
-        vOracleWalletAddrs = {"TXuoB9DNEuZx1RCfKw3Hsv7jNUHTt4sVG1",     // Oracle Masternode Event & Result Posting Wallet Address (Regtest).
-                              "TFvZVYGdrxxNunQLzSnRSC58BSRA7si6zu" };
+        vOracleWalletAddrs = {"TS4s7JvAVP6Rn1go7Tsa2PrZddMqdMokCM",     // Oracle Masternode Event & Result Posting Wallet Address (Regtest).
+                              "TEYNdtsUy6k2zG6fY5mAo4jineGP8oLpNR" };
         nBetBlocksIndexTimespan = 23040;                                // Currently checking back 2 weeks for events and bets for each result. (With approx. 2 days buffer).
-        strDevPayoutAddr = "TLuTVND9QbZURHmtuqD5ESECrGuB9jLZTs";        // Development fund payout address (Regtest).
-        strOMNOPayoutAddr = "THofaueWReDjeZQZEECiySqV9GP4byP3qr";       // OMNO fund payout address (Regtest).
+        strDevPayoutAddr = "TXGFsuGcRGv5QHpkcTxC7ChCmvTuXwav6U";        // Development fund payout address (Regtest).
+        strOMNOPayoutAddr = "TEYrmcfMzmQJjwXanQRaeioYoC9mZsX4gM";       // OMNO fund payout address (Regtest).
         nOMNORewardPermille = 24;                                       // profitAcc / (100-6) * 100 * 0.024 (nMNBetReward = Total Profit * 0.024).
         nDevRewardPermille = 6;                                         // profitAcc / (100-6) * 100 * 0.006 (nDevReward = Total Profit * 0.006).
         nOddsDivisor = 10000;                                           // Odds divisor, Facilitates calculations with floating integers.

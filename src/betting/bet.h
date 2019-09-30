@@ -410,7 +410,7 @@ class CMappingsDB
 {
 public:
     // Default Constructor.
-    explicit CMappingsDB();
+    explicit CMappingsDB(bool fWipe = false);
 
     static std::string GetDbName();
 
@@ -429,7 +429,7 @@ class CEventsDB
 {
 public:
     // Default constructor.
-    explicit CEventsDB();
+    explicit CEventsDB(bool fWipe = false);
 
     static std::string GetDbName();
 
@@ -449,7 +449,7 @@ class CResultsDB
 {
 public:
     // Default constructor.
-    CResultsDB();
+    CResultsDB(bool fWipe = false);
 
     static std::string GetDbName();
 
