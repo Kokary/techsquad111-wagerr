@@ -7,9 +7,12 @@
 
 #include "util.h"
 #include "chainparams.h"
+#include "leveldbwrapper.h"
 
 #include <boost/filesystem/path.hpp>
 #include <map>
+
+class CLevelDBWrapper;
 
 // The supported bet outcome types.
 typedef enum OutcomeType {
@@ -49,7 +52,8 @@ typedef enum BetTxTypes{
     cgBetTxType          = 0x07,  // Chain games bet transaction type identifier.
     cgResultTxType       = 0x08,  // Chain games result transaction type identifier.
     plSpreadsEventTxType = 0x09,  // Spread odds transaction type identifier.
-    plTotalsEventTxType  = 0x0a   // Totals odds transaction type identifier.
+    plTotalsEventTxType  = 0x0a,  // Totals odds transaction type identifier.
+    plEventPatchTxType   = 0x0b   // Peerless event patch transaction type identifier.
 } BetTxTypes;
 
 // The supported mapping TX types.
@@ -96,18 +100,6 @@ class CBetOut : public CTxOut {
         return CTxOut::IsEmpty() && nBetValue == 0 && nEventId == 0;
     }
 };
-
-/** Ensures a TX has come from an OMNO wallet. **/
-bool IsValidOracleTx(const CTxIn &txin);
-
-/** Aggregates the amount of WGR to be minted to pay out all bets as well as dev and OMNO rewards. **/
-int64_t GetBlockPayouts(std::vector<CBetOut>& vExpectedPayouts, CAmount& nMNBetReward);
-
-/** Aggregates the amount of WGR to be minted to pay out all CG Lotto winners as well as OMNO rewards. **/
-int64_t GetCGBlockPayouts(std::vector<CBetOut>& vexpectedCGPayouts, CAmount& nMNBetReward);
-
-/** Validating the payout block using the payout vector. **/
-bool IsBlockPayoutsValid(std::vector<CBetOut> vExpectedPayouts, CBlock block);
 
 class CPeerlessEvent
 {
@@ -356,6 +348,29 @@ public:
     static bool FromOpCode(std::string opCode, CPeerlessTotalsEvent &pte);
 };
 
+class CPeerlessEventPatch
+{
+public:
+    int nVersion;
+    uint32_t nEventId;
+    uint64_t nStartTime;
+
+    CPeerlessEventPatch() {}
+
+    static bool ToOpCode(CPeerlessEventPatch pe, std::string &opCode);
+    static bool FromOpCode(std::string opCode, CPeerlessEventPatch &pe);
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp (Stream& s, Operation ser_action, int nType, int nVersion) {
+        READWRITE(this->nVersion);
+        nVersion = this->nVersion;
+        READWRITE(nEventId);
+        READWRITE(nStartTime);
+    }
+};
+
 class CMapping
 {
 public:
@@ -368,7 +383,12 @@ public:
     // Default Constructor.
     CMapping() {}
 
-    static bool ToOpCode(CMapping &mapping, std::string &opCode);
+    MappingTypes GetType() const;
+
+    static std::string ToTypeName(MappingTypes type);
+    static MappingTypes FromTypeName(const std::string& name);
+
+    static bool ToOpCode(const CMapping& mapping, std::string &opCode);
     static bool FromOpCode(std::string opCode, CMapping &mapping);
 
     ADD_SERIALIZE_METHODS;
@@ -383,107 +403,99 @@ public:
     }
 };
 
-// Define new map type to store Wagerr mappings.
-typedef std::map<uint32_t, CMapping> mappingIndex_t;
-
-class CMappingDB
+class CBettingDB
 {
-protected:
-    // Global variables that stores the different Wagerr mappings.
-    static mappingIndex_t mSportsIndex;
-    static mappingIndex_t mRoundsIndex;
-    static mappingIndex_t mTeamsIndex;
-    static mappingIndex_t mTournamentsIndex;
+public:
+    // Default Constructor.
+    explicit CBettingDB(std::string dbName, std::size_t cacheSize, bool fWipe);
 
-    static CCriticalSection cs_setSports;
-    static CCriticalSection cs_setRounds;
-    static CCriticalSection cs_setTeams;
-    static CCriticalSection cs_setTournaments;
+    bool AdvanceRestorePoint(const uint256& lastBlockHash);
+    bool RestoreToPoint(const uint256& bestBlockHash);
+
+    using Key1byte = unsigned char;
+
+protected:
+    CLevelDBWrapper & getDb();
+    static constexpr std::size_t dbWrapperCacheSize();
+    static constexpr Key1byte checkPointKey();
+    static constexpr Key1byte restorePointKey();
+    static constexpr Key1byte primaryKey();
 
 private:
-    std::string mDBFileName;
-    boost::filesystem::path mFilePath;
+    CLevelDBWrapper db;
 
+};
+
+// Define new map type to store Wagerr mappings.
+using MappingsIndex = std::map<uint32_t, CMapping>;
+
+class CMappingsDB : public CBettingDB
+{
 public:
-    // Default constructor.
-    CMappingDB() {}
+    // Default Constructor.
+    explicit CMappingsDB(bool fWipe = false);
 
-    // Parametrized Constructor.
-    CMappingDB(std::string fileName);
+    static std::string GetDbName();
 
-    bool Write(const mappingIndex_t& mappingIndex,  uint256 latestBlockHash);
-    bool Read(mappingIndex_t& mappingIndex, uint256& lastBlockHash);
-
-    static void GetSports(mappingIndex_t &sportsIndex);
-    static void SetSports(const mappingIndex_t &sportsIndex);
-    static void AddSport(CMapping sm);
-
-    static void GetRounds(mappingIndex_t &roundsIndex);
-    static void SetRounds(const mappingIndex_t &roundsIndex);
-    static void AddRound(CMapping rm);
-
-    static void GetTeams(mappingIndex_t &teamsIndex);
-    static void SetTeams(const mappingIndex_t &teamsIndex);
-    static void AddTeam(CMapping ts);
-
-    static void GetTournaments(mappingIndex_t &tournamentsIndex);
-    static void SetTournaments(const mappingIndex_t &tournamentsIndex);
-    static void AddTournament(CMapping ts);
+    bool Save(const CMapping& mapping);
+    bool Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex);
+    bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex);
 };
 
 // Define new map type to store Wagerr events.
-typedef std::map<uint32_t, CPeerlessEvent> eventIndex_t;
+using EventsIndex = std::map<uint32_t, CPeerlessEvent>;
 
-class CEventDB
+class CEventsDB : public CBettingDB
 {
-protected:
-    // Global variable that stores the current live Wagerr events.
-    static eventIndex_t eventsIndex;
-    static CCriticalSection cs_setEvents;
-
-private:
-    boost::filesystem::path pathEvents;
-
 public:
     // Default constructor.
-    CEventDB();
+    explicit CEventsDB(bool fWipe = false);
 
-    bool Write(const eventIndex_t& eventIndex,  uint256 latestProcessedBlock);
-    bool Read(eventIndex_t& eventIndex, uint256& lastBlockHash);
+    static std::string GetDbName();
 
-    static void GetEvents(eventIndex_t &eventIndex);
-    static void SetEvents(const eventIndex_t &eventIndex);
-
-    static void AddEvent(CPeerlessEvent pe);
-    static void RemoveEvent(CPeerlessResult pr);
+    bool Save(const CPeerlessEvent& plEvent);
+    bool Erase(const CPeerlessResult& plEvent);
+    bool Write(const EventsIndex& eventsIndex);
+    bool Read(EventsIndex& eventsIndex);
 };
 
 // Define new map type to store Wagerr results.
-typedef std::map<uint32_t, CPeerlessResult> resultsIndex_t;
+using ResultsIndex = std::map<uint32_t, CPeerlessResult>;
 
-class CResultDB
+class CResultsDB : public CBettingDB
 {
-protected:
-    // Global variable that stores the Wagerr results.
-    static resultsIndex_t resultsIndex;
-    static CCriticalSection cs_setResults;
-
-private:
-    boost::filesystem::path pathResults;
-
 public:
     // Default constructor.
-    CResultDB();
+    CResultsDB(bool fWipe = false);
 
-    bool Write(const resultsIndex_t& resultsIndex,  uint256 latestProcessedBlock);
-    bool Read(resultsIndex_t& resultsIndex, uint256& lastBlockHash);
+    static std::string GetDbName();
 
-    static void GetResults(resultsIndex_t &resultsIndex);
-    static void SetResults(const resultsIndex_t &resultsIndex);
-
-    static void AddResult(CPeerlessResult pe);
-    static void RemoveResult(CPeerlessResult pe);
+    bool Save(const CPeerlessResult& plResult);
+    bool Erase(const CPeerlessResult& plResult);
+    bool Write(const ResultsIndex& resultsIndex);
+    bool Read(ResultsIndex& resultsIndex);
 };
+
+/** Container for several db objects */
+extern struct BettingContext
+{
+    CMappingsDB* mappings;
+    CResultsDB* results;
+    CEventsDB* events;
+} bettingContext;
+
+
+/** Ensures a TX has come from an OMNO wallet. **/
+bool IsValidOracleTx(const CTxIn &txin);
+
+/** Aggregates the amount of WGR to be minted to pay out all bets as well as dev and OMNO rewards. **/
+int64_t GetBlockPayouts(std::vector<CBetOut>& vExpectedPayouts, CAmount& nMNBetReward);
+
+/** Aggregates the amount of WGR to be minted to pay out all CG Lotto winners as well as OMNO rewards. **/
+int64_t GetCGBlockPayouts(std::vector<CBetOut>& vexpectedCGPayouts, CAmount& nMNBetReward);
+
+/** Validating the payout block using the payout vector. **/
+bool IsBlockPayoutsValid(std::vector<CBetOut> vExpectedPayouts, CBlock block);
 
 /** Find peerless events. **/
 std::vector<CPeerlessResult> getEventResults(int height);
@@ -497,16 +509,6 @@ std::vector<CBetOut> GetBetPayouts(int height);
 /** Get the chain games winner and return the payout vector. **/
 std::vector<CBetOut> GetCGLottoBetPayouts(int height);
 
-/** Set a peerless event spread odds **/
-void SetEventSpreadOdds(CPeerlessSpreadsEvent sEventOdds);
-
-/** Set a peerless event total odds **/
-void SetEventTotalOdds(CPeerlessTotalsEvent tEventOdds);
-
-/** Set a peerless event money line odds **/
-void SetEventMLOdds(CPeerlessUpdateOdds mEventOdds);
-
-/** Set a peerless event accumulators **/
-void SetEventAccummulators (CPeerlessBet plBet, CAmount betAmount);
+void ParseBettingTx(const CTransaction& tx);
 
 #endif // WAGERR_BET_H

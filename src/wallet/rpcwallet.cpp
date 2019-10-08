@@ -67,116 +67,104 @@ UniValue listevents(const UniValue& params, bool fHelp)
             "\nExamples:\n" +
             HelpExampleCli("listevents", "") + HelpExampleRpc("listevents", ""));
 
-    CEventDB edb;
-    eventIndex_t eventsIndex;
-    edb.GetEvents(eventsIndex);
+    EventsIndex eventsIndex{};
+    UniValue result{UniValue::VARR};
 
-    mappingIndex_t sportsIndex;
-    CMappingDB msdb("sports.dat");
-    msdb.GetSports(sportsIndex);
+    if (!bettingContext.events->Read(eventsIndex)) {
+        return result;
+    }
 
-    mappingIndex_t roundsIndex;
-    CMappingDB mrdb("rounds.dat");
-    mrdb.GetRounds(roundsIndex);
-
-    mappingIndex_t teamsIndex;
-    CMappingDB mtdb("teams.dat");
-    mtdb.GetTeams(teamsIndex);
-
-    mappingIndex_t tournamentsIndex;
-    CMappingDB mtodb("tournaments.dat");
-    mtodb.GetTournaments(tournamentsIndex);
-
+    MappingsIndex sportsIndex{};
+    MappingsIndex roundsIndex{};
+    MappingsIndex teamsIndex{};
+    MappingsIndex tournamentsIndex{};
     std::string sportFilter = "";
+
+    bettingContext.mappings->Read(sportMapping, sportsIndex);
+    bettingContext.mappings->Read(roundMapping, roundsIndex);
+    bettingContext.mappings->Read(teamMapping, teamsIndex);
+    bettingContext.mappings->Read(tournamentMapping, tournamentsIndex);
 
     if (params.size() >= 1) {
         sportFilter = params[0].get_str();
     }
 
     // Check the events index actually has events,
-    if (eventsIndex.size() < 1) {
-        throw std::runtime_error("Currently no events to list.");
+    if (eventsIndex.size() == 0) {
+        return result;
     }
-
-    UniValue ret(UniValue::VARR);
 
     std::map<uint32_t, CPeerlessEvent>::iterator it;
     for (it = eventsIndex.begin(); it != eventsIndex.end(); it++) {
+        CPeerlessEvent plEvent = it->second;
 
-        try {
-            CPeerlessEvent plEvent = it->second;
-
-            // Ensure all the mapping indexes for this event are set. Discard the event is any mappings are not set.
-            if (!sportsIndex.count(plEvent.nSport) || !tournamentsIndex.count(plEvent.nTournament) || !teamsIndex.count(plEvent.nHomeTeam) || !teamsIndex.count(plEvent.nAwayTeam)) {
-                continue;
-            }
-
-            std::string sport = sportsIndex.find(plEvent.nSport)->second.sName;
-
-            // if event filter is set the don't list event if it doesn't match the filter.
-            if (params.size() > 0 && sportFilter != sport) {
-                continue;
-            }
-
-            // Only list active events.
-            if ((time_t) plEvent.nStartTime < std::time(0)) {
-                continue;
-            }
-
-            //std::string round    = roundsIndex.find(plEvent.nStage)->second.sName;
-            std::string tournament = tournamentsIndex.find(plEvent.nTournament)->second.sName;
-            std::string homeTeam   = teamsIndex.find(plEvent.nHomeTeam)->second.sName;
-            std::string awayTeam   = teamsIndex.find(plEvent.nAwayTeam)->second.sName;
-
-            UniValue evt(UniValue::VOBJ);
-
-            evt.push_back(Pair("event_id", (uint64_t) plEvent.nEventId));
-            evt.push_back(Pair("sport", sport));
-            evt.push_back(Pair("tournament", tournament));
-            //evt.push_back(Pair("round", ""));
-
-            evt.push_back(Pair("starting", (uint64_t) plEvent.nStartTime));
-            evt.push_back(Pair("tester", (uint64_t) plEvent.nAwayTeam));
-
-            UniValue teams(UniValue::VOBJ);
-
-            teams.push_back(Pair("home", homeTeam));
-            teams.push_back(Pair("away", awayTeam));
-
-            evt.push_back(Pair("teams", teams));
-
-            UniValue odds(UniValue::VARR);
-
-            UniValue mlOdds(UniValue::VOBJ);
-            UniValue spreadOdds(UniValue::VOBJ);
-            UniValue totalsOdds(UniValue::VOBJ);
-
-            mlOdds.push_back(Pair("mlHome", (uint64_t) plEvent.nHomeOdds));
-            mlOdds.push_back(Pair("mlAway", (uint64_t) plEvent.nAwayOdds));
-            mlOdds.push_back(Pair("mlDraw", (uint64_t) plEvent.nDrawOdds));
-
-            spreadOdds.push_back(Pair("spreadPoints", (uint64_t) plEvent.nSpreadPoints));
-            spreadOdds.push_back(Pair("spreadHome", (uint64_t) plEvent.nSpreadHomeOdds));
-            spreadOdds.push_back(Pair("spreadAway", (uint64_t) plEvent.nSpreadAwayOdds));
-
-            totalsOdds.push_back(Pair("totalsPoints", (uint64_t) plEvent.nTotalPoints));
-            totalsOdds.push_back(Pair("totalsOver", (uint64_t) plEvent.nTotalOverOdds));
-            totalsOdds.push_back(Pair("totalsUnder", (uint64_t) plEvent.nTotalUnderOdds));
-
-            odds.push_back(mlOdds);
-            odds.push_back(spreadOdds);
-            odds.push_back(totalsOdds);
-
-            evt.push_back(Pair("odds", odds));
-
-            ret.push_back(evt);
+        // Ensure all the mapping indexes for this event are set. Discard the event is any mappings are not set.
+        if (!sportsIndex.count(plEvent.nSport) || !tournamentsIndex.count(plEvent.nTournament) || !teamsIndex.count(plEvent.nHomeTeam) || !teamsIndex.count(plEvent.nAwayTeam)) {
+            continue;
         }
-        catch (std::exception& e) {
-            LogPrintf("ListEvents() failed to pull event data from .dats ");
+
+        std::string sport = sportsIndex.find(plEvent.nSport)->second.sName;
+
+        // if event filter is set the don't list event if it doesn't match the filter.
+        if (params.size() > 0 && sportFilter != sport) {
+            continue;
         }
+
+        // Only list active events.
+        if ((time_t) plEvent.nStartTime < std::time(0)) {
+            continue;
+        }
+
+        //std::string round    = roundsIndex.find(plEvent.nStage)->second.sName;
+        std::string tournament = tournamentsIndex.find(plEvent.nTournament)->second.sName;
+        std::string homeTeam   = teamsIndex.find(plEvent.nHomeTeam)->second.sName;
+        std::string awayTeam   = teamsIndex.find(plEvent.nAwayTeam)->second.sName;
+
+        UniValue evt(UniValue::VOBJ);
+
+        evt.push_back(Pair("event_id", (uint64_t) plEvent.nEventId));
+        evt.push_back(Pair("sport", sport));
+        evt.push_back(Pair("tournament", tournament));
+        //evt.push_back(Pair("round", ""));
+
+        evt.push_back(Pair("starting", (uint64_t) plEvent.nStartTime));
+        evt.push_back(Pair("tester", (uint64_t) plEvent.nAwayTeam));
+
+        UniValue teams(UniValue::VOBJ);
+
+        teams.push_back(Pair("home", homeTeam));
+        teams.push_back(Pair("away", awayTeam));
+
+        evt.push_back(Pair("teams", teams));
+
+        UniValue odds(UniValue::VARR);
+
+        UniValue mlOdds(UniValue::VOBJ);
+        UniValue spreadOdds(UniValue::VOBJ);
+        UniValue totalsOdds(UniValue::VOBJ);
+
+        mlOdds.push_back(Pair("mlHome", (uint64_t) plEvent.nHomeOdds));
+        mlOdds.push_back(Pair("mlAway", (uint64_t) plEvent.nAwayOdds));
+        mlOdds.push_back(Pair("mlDraw", (uint64_t) plEvent.nDrawOdds));
+
+        spreadOdds.push_back(Pair("spreadPoints", (uint64_t) plEvent.nSpreadPoints));
+        spreadOdds.push_back(Pair("spreadHome", (uint64_t) plEvent.nSpreadHomeOdds));
+        spreadOdds.push_back(Pair("spreadAway", (uint64_t) plEvent.nSpreadAwayOdds));
+
+        totalsOdds.push_back(Pair("totalsPoints", (uint64_t) plEvent.nTotalPoints));
+        totalsOdds.push_back(Pair("totalsOver", (uint64_t) plEvent.nTotalOverOdds));
+        totalsOdds.push_back(Pair("totalsUnder", (uint64_t) plEvent.nTotalUnderOdds));
+
+        odds.push_back(mlOdds);
+        odds.push_back(spreadOdds);
+        odds.push_back(totalsOdds);
+
+        evt.push_back(Pair("odds", odds));
+
+        result.push_back(evt);
     }
 
-    return ret;
+    return result;
 }
 
 UniValue listchaingamesevents(const UniValue& params, bool fHelp)
@@ -296,21 +284,19 @@ UniValue listbets(const UniValue& params, bool fHelp)
     if (nFrom < 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative from");
 
-    UniValue ret(UniValue::VARR);
+    UniValue result{UniValue::VARR};
+    EventsIndex eventsIndex{};
 
-    const CWallet::TxItems & txOrdered = pwalletMain->wtxOrdered;
+    if (!bettingContext.events->Read(eventsIndex)) {
+        return result;
+    }
 
-    CEventDB edb;
-    eventIndex_t eventIndex;
-    edb.GetEvents(eventIndex);
+    MappingsIndex teamsIndex{};
+    MappingsIndex tournamentsIndex{};
+    const CWallet::TxItems & txOrdered{pwalletMain->wtxOrdered};
 
-    mappingIndex_t teamsIndex;
-    CMappingDB mtdb("teams.dat");
-    mtdb.GetTeams(teamsIndex);
-
-    mappingIndex_t tournamentsIndex;
-    CMappingDB mtodb("tournaments.dat");
-    mtodb.GetTournaments(tournamentsIndex);
+    bettingContext.mappings->Read(teamMapping, teamsIndex);
+    bettingContext.mappings->Read(tournamentMapping, tournamentsIndex);
 
     // iterate backwards until we have nCount items to return:
     for (CWallet::TxItems::const_reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it) {
@@ -335,8 +321,8 @@ UniValue listbets(const UniValue& params, bool fHelp)
                         entry.push_back(Pair("event-id", (uint64_t) plBet.nEventId));
 
                         // Retrieve the event details
-                        if (eventIndex.count(plBet.nEventId)){
-                            CPeerlessEvent plEvent = eventIndex.find(plBet.nEventId)->second;
+                        if (eventsIndex.count(plBet.nEventId)){
+                            CPeerlessEvent plEvent = eventsIndex.find(plBet.nEventId)->second;
 
                             entry.push_back(Pair("starting", plEvent.nStartTime));
                             if (teamsIndex.count(plEvent.nHomeTeam)) {
@@ -354,14 +340,11 @@ UniValue listbets(const UniValue& params, bool fHelp)
                         entry.push_back(Pair("amount", ValueFromAmount(txout.nValue)));
 
                         // Check if the users bet has a result posted, if so check to see it its a winning or losing bet.
-                        CResultDB rdb;
-                        resultsIndex_t resultsIndex;
-                        rdb.GetResults(resultsIndex);
-
-                        if (resultsIndex.size() > 0) {
+                        ResultsIndex resultsIndex{};
+                        if (bettingContext.results->Read(resultsIndex) && resultsIndex.size() != 0) {
                             std::string betResult = "pending";
 
-                            if (resultsIndex.count(plBet.nEventId)) {
+                            if (resultsIndex.count(plBet.nEventId) != 0) {
                                 CPeerlessResult plResult = resultsIndex.find(plBet.nEventId)->second;
 
                                 switch (plBet.nOutcome) {
@@ -401,22 +384,22 @@ UniValue listbets(const UniValue& params, bool fHelp)
                             entry.push_back(Pair("result", betResult));
                         }
 
-                        ret.push_back(entry);
+                        result.push_back(entry);
                     }
                 }
             }
         }
 
-        if ((int)ret.size() >= (nCount + nFrom)) break;
+        if ((int)result.size() >= (nCount + nFrom)) break;
     }
     // ret is newest to oldest
 
-    if (nFrom > (int)ret.size())
-        nFrom = ret.size();
-    if ((nFrom + nCount) > (int)ret.size())
-        nCount = ret.size() - nFrom;
+    if (nFrom > (int)result.size())
+        nFrom = result.size();
+    if ((nFrom + nCount) > (int)result.size())
+        nCount = result.size() - nFrom;
 
-    std::vector<UniValue> arrTmp = ret.getValues();
+    std::vector<UniValue> arrTmp = result.getValues();
 
     std::vector<UniValue>::iterator first = arrTmp.begin();
     std::advance(first, nFrom);
@@ -428,11 +411,11 @@ UniValue listbets(const UniValue& params, bool fHelp)
 
     std::reverse(arrTmp.begin(), arrTmp.end()); // Return oldest to newest
 
-    ret.clear();
-    ret.setArray();
-    ret.push_backV(arrTmp);
+    result.clear();
+    result.setArray();
+    result.push_backV(arrTmp);
 
-    return ret;
+    return result;
 }
 
 UniValue listchaingamesbets(const UniValue& params, bool fHelp)
@@ -1159,24 +1142,18 @@ UniValue geteventsliability(const UniValue& params, bool fHelp)
             "\nExamples:\n" +
             HelpExampleCli("geteventtotals", "") + HelpExampleRpc("geteventtotals", ""));
 
-    CEventDB edb;
-    eventIndex_t eventsIndex;
-    edb.GetEvents(eventsIndex);
+    EventsIndex eventsIndex{};
+    int payoutThreshold = params[0].get_int();
+    int betThreshold = params[1].get_int();
+    UniValue ret(UniValue::VARR);
 
     // Check the events index actually has events,
-    if (eventsIndex.size() < 1) {
+    if (!bettingContext.events->Read(eventsIndex) || eventsIndex.size() < 1) {
         throw std::runtime_error("Currently no events to list.");
     }
 
-    int payoutThreshold = params[0].get_int();
-    int betThreshold = params[1].get_int();
-
-    UniValue ret(UniValue::VARR);
-
-    std::map<uint32_t, CPeerlessEvent>::iterator it;
-    for (it = eventsIndex.begin(); it != eventsIndex.end(); it++) {
-
-        CPeerlessEvent plEvent = it->second;
+    for (auto it = eventsIndex.begin(); it != eventsIndex.end(); it++) {
+        const CPeerlessEvent plEvent = it->second;
 
         UniValue event(UniValue::VOBJ);
         event.push_back(Pair("event-id", (int) plEvent.nEventId));
