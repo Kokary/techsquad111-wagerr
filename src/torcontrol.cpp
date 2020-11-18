@@ -265,7 +265,7 @@ static std::pair<std::string,std::string> SplitTorReplyLine(const std::string &s
     }
     if (ptr < s.size())
         ++ptr; // skip ' '
-    return make_pair(type, s.substr(ptr));
+    return std::make_pair(type, s.substr(ptr));
 }
 
 /** Parse reply arguments in the form 'METHODS=COOKIE,SAFECOOKIE COOKIEFILE=".../control_auth_cookie"'.
@@ -379,8 +379,10 @@ static std::pair<bool,std::string> ReadBinaryFile(const std::string &filename, s
     while ((n=fread(buffer, 1, sizeof(buffer), f)) > 0) {
         // Check for reading errors so we don't return any data if we couldn't
         // read the entire file (or up to maxsize)
-        if (ferror(f))
+        if (ferror(f)) {
+            fclose(f);
             return std::make_pair(false,"");
+        }
         retval.append(buffer, buffer+n);
         if (retval.size() > maxsize)
             break;
