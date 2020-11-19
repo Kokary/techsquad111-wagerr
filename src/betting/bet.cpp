@@ -229,10 +229,6 @@ bool CheckBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
             }
             case cgBetTxType:
             {
-                if (height >= sporkManager.GetSporkValue(SPORK_21_QUICKGAMES_MAINTENANCE_MODE)) {
-                    return error("CheckBettingTX : Quick games transactions are temporarily disabled for maintenance");
-                }
-
                 CChainGamesBetTx* cgBetTx = (CChainGamesBetTx*) bettingTx.get();
 
                 CChainGamesEventDB cgEvent;
@@ -252,6 +248,10 @@ bool CheckBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
             }
             case qgBetTxType:
             {
+                if (height >= Params().QuickGamesEndHeight()) {
+                    return error("CheckBettingTX : Quick games transactions are disabled");
+                }
+
                 CQuickGamesBetTx* qgBetTx = (CQuickGamesBetTx*) bettingTx.get();
                 if (!(qgBetTx->gameType == QuickGamesType::qgDice)) {
                     return error("CheckBettingTX: Invalid game type (%d)", qgBetTx->gameType);
@@ -641,7 +641,7 @@ void ProcessBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, 
             }
             case qgBetTxType:
             {
-                if (!wagerrProtocolV3) break;
+                if (!wagerrProtocolV3 || height >= Params().QuickGamesEndHeight()) break;
 
                 CQuickGamesBetTx* qgBetTx = (CQuickGamesBetTx*) bettingTx.get();
 
