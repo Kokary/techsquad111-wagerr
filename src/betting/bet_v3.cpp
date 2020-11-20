@@ -273,7 +273,7 @@ void GetQuickGamesBetPayouts(CBettingsView& bettingsViewCache, const int nNewBlo
     const int nLastBlockHeight = nNewBlockHeight - 1;
 
     if (nLastBlockHeight >= Params().QuickGamesEndHeight()){
-        LogPrintf("GetQuickGamesBetPayouts : Quick games transactions are disabled");
+        LogPrintf("GetQuickGamesBetPayouts : Quick games transactions are disabled\n");
         return;
     }
 

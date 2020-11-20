@@ -632,7 +632,7 @@ void ProcessBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, 
             {
                 if (!wagerrProtocolV3) break;
                 if (height >= Params().QuickGamesEndHeight()) {
-                    LogPrintf("ProcessBettingTx : Chain games transactions are disabled");
+                    LogPrintf("ProcessBettingTx : Chain games transactions are disabled\n");
                     break;
                 }
 
@@ -656,7 +656,7 @@ void ProcessBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, 
             {
                 if (!wagerrProtocolV3) break;
                 if (height >= Params().QuickGamesEndHeight()) {
-                    LogPrintf("ProcessBettingTx : Chain games transactions are disabled");
+                    LogPrintf("ProcessBettingTx : Chain games transactions are disabled\n");
                     break;
                 }
 
@@ -812,7 +812,7 @@ void ProcessBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, 
             {
                 if (!wagerrProtocolV3) break;
                 if (height >= Params().QuickGamesEndHeight()) {
-                    LogPrintf("ProcessBettingTx : Chain games transactions are disabled");
+                    LogPrintf("ProcessBettingTx : Chain games transactions are disabled\n");
                     break;
                 }
                 CChainGamesEventTx* cgEventTx = (CChainGamesEventTx*) bettingTx.get();
@@ -832,7 +832,7 @@ void ProcessBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, 
             {
                 if (!wagerrProtocolV3) break;
                 if (height >= Params().QuickGamesEndHeight()) {
-                    LogPrintf("ProcessBettingTx : Chain games transactions are disabled");
+                    LogPrintf("ProcessBettingTx : Chain games transactions are disabled\n");
                     break;
                 }
 
