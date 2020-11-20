@@ -170,7 +170,8 @@ public:
 
     /** Betting on blockchain **/
     std::vector<COracle> Oracles() const { return vOracles; }
-    int BetBlocksIndexTimespan() const { return nBetBlocksIndexTimespan; }
+    int BetBlocksIndexTimespanV2() const { return nBetBlocksIndexTimespanV2; }
+    int BetBlocksIndexTimespanV3() const { return nBetBlocksIndexTimespanV3; }
     uint64_t OMNORewardPermille() const { return nOMNORewardPermille; }
     uint64_t DevRewardPermille() const { return nDevRewardPermille; }
     int BetBlockPayoutAmount() const { return nBetBlockPayoutAmount; } // Currently not used
@@ -182,6 +183,7 @@ public:
     int WagerrProtocolV1StartHeight() const { return nWagerrProtocolV1StartHeight; }
     int WagerrProtocolV2StartHeight() const { return nWagerrProtocolV2StartHeight; }
     int WagerrProtocolV3StartHeight() const { return nWagerrProtocolV3StartHeight; }
+    int QuickGamesEndHeight() const { return nQuickGamesEndHeight; }
     const std::vector<CQuickGamesView>& QuickGamesArr() const { return quickGamesArr; }
 
     /** temp worarounds **/
@@ -282,7 +284,8 @@ protected:
 
     std::vector<COracle> vOracles;
 
-    int nBetBlocksIndexTimespan;
+    int nBetBlocksIndexTimespanV2;
+    int nBetBlocksIndexTimespanV3;
     std::string strDevPayoutAddrOld;
     std::string strDevPayoutAddrNew;
     std::string strOMNOPayoutAddrOld;
@@ -298,6 +301,7 @@ protected:
     int nWagerrProtocolV1StartHeight;
     int nWagerrProtocolV2StartHeight;
     int nWagerrProtocolV3StartHeight;
+    int nQuickGamesEndHeight;
     int nMaturityV2StartHeight;
     int nKeysRotateHeight;
 
