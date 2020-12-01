@@ -51,6 +51,21 @@ TestingSetup::TestingSetup()
         pblocktree = new CBlockTreeDB(1 << 20, true);
         pcoinsdbview = new CCoinsViewDB(1 << 23, true);
         pcoinsTip = new CCoinsViewCache(pcoinsdbview);
+
+        bettingsView = new CBettingsView();
+        // create Level DB storage for global betting database
+        bettingsView->mappingsStorage = MakeUnique<CStorageLevelDB>(CBettingDB::MakeDbPath("test-mappings"), CBettingDB::dbWrapperCacheSize(), true);
+        // create cacheble betting DB with LevelDB storage as main storage
+        bettingsView->mappings = MakeUnique<CBettingDB>(*bettingsView->mappingsStorage.get());
+
+        bettingsView->eventsStorage = MakeUnique<CStorageLevelDB>(CBettingDB::MakeDbPath("test-events"), CBettingDB::dbWrapperCacheSize(), true);
+        bettingsView->events = MakeUnique<CBettingDB>(*bettingsView->eventsStorage.get());
+
+        bettingsView->resultsStorage = MakeUnique<CStorageLevelDB>(CBettingDB::MakeDbPath("test-results"), CBettingDB::dbWrapperCacheSize(), true);
+        bettingsView->results = MakeUnique<CBettingDB>(*bettingsView->resultsStorage.get());
+
+        bettingsView->undosStorage = MakeUnique<CStorageLevelDB>(CBettingDB::MakeDbPath("test-undos"), CBettingDB::dbWrapperCacheSize(), true);
+        bettingsView->undos = MakeUnique<CBettingDB>(*bettingsView->resultsStorage.get());
         InitBlockIndex();
 #ifdef ENABLE_WALLET
         bool fFirstRun;
@@ -78,6 +93,7 @@ TestingSetup::~TestingSetup()
         delete pcoinsTip;
         delete pcoinsdbview;
         delete pblocktree;
+        delete bettingsView;
 #ifdef ENABLE_WALLET
         bitdb.Flush(true);
         bitdb.Reset();
