@@ -1521,6 +1521,16 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState& state, const CTransa
         CTxMemPoolEntry entry(tx, nFees, GetTime(), dPriority, chainActive.Height());
         unsigned int nSize = entry.GetTxSize();
 
+        LogPrintf("%s - New MemPool entry - hash[%s] size[%d] fee[%f] time[%d] height[%d] startingpriority[%f]\n",
+                __func__,
+                entry.GetTx().GetHash().ToString(),
+                entry.GetTxSize(),
+                entry.GetFee(),
+                entry.GetTime(),
+                entry.GetHeight(),
+                entry.GetPriority(entry.GetHeight())
+            );
+
         // Don't accept it if it can't get into a block
         // but prioritise dstx and don't check fees for it
         if (mapObfuscationBroadcastTxes.count(hash)) {

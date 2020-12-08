@@ -459,6 +459,19 @@ void CTxMemPool::remove(const CTransaction& origTx, std::list<CTransaction>& rem
 
             removed.push_back(tx);
             totalTxSize -= mapTx[hash].GetTxSize();
+
+            LogPrintf("%s - Removing MemPool entry - hash[%s] size[%d] fee[%f] time[%d] height[%d] startingpriority[%f]\n",
+                    __func__,
+                    mapTx[hash].GetTx().GetHash().ToString(),
+                    mapTx[hash].GetTxSize(),
+                    mapTx[hash].GetFee(),
+                    mapTx[hash].GetTime(),
+                    mapTx[hash].GetHeight(),
+                    mapTx[hash].GetPriority(mapTx[hash].GetHeight())
+                );
+            if (chainActive.Height() != mapTx[hash].GetHeight()+1) {
+                LogPrintf("%s - Slow TX - %s has been in the mempool since %d", __func__, mapTx[hash].GetTx().GetHash().ToString(), mapTx[hash].GetHeight());
+            }
             mapTx.erase(hash);
             nTransactionsUpdated++;
         }
