@@ -4,13 +4,13 @@ Release Process
 Before every release candidate:
 
 * Update translations (ping wumpus on IRC) see [translation_process.md](https://github.com/wagerr/wagerr/blob/master/doc/translation_process.md#synchronising-translations).
-
 * Update manpages, see [gen-manpages.sh](https://github.com/wagerr/wagerr/blob/master/contrib/devtools/README.md#gen-manpagessh).
+* Update release candidate version in `configure.ac` (`CLIENT_VERSION_RC`)
 
 Before every minor and major release:
 
 * Update [bips.md](bips.md) to account for changes since the last release.
-* Update version in `configure.ac` (don't forget to set `CLIENT_VERSION_IS_RELEASE` to `true`)
+* Update version in `configure.ac` (don't forget to set `CLIENT_VERSION_IS_RELEASE` to `true`) (don't forget to set `CLIENT_VERSION_RC` to `0`)
 * Write release notes (see below)
 * Update `src/chainparams.cpp` nMinimumChainWork with information from the getblockchaininfo rpc.
 * Update `src/chainparams.cpp` defaultAssumeValid with information from the getblockhash rpc.
@@ -43,18 +43,18 @@ Check out the source code in the following directory hierarchy.
 
 Write release notes. git shortlog helps a lot, for example:
 
-    git shortlog --no-merges v(current version, e.g. 1.3.99)..v(new version, e.g. 1.4.34)
+    git shortlog --no-merges --format="* [\`%h\`](https://github.com/wagerr/wagerr/commit/%h) %s" v(current version, e.g. 3.1.0)..(new version, e.g. v4.0.0rc2)
 
 (or ping @wumpus on IRC, he has specific tooling to generate the list of merged pulls
 and sort them into categories based on labels)
 
 Generate list of authors:
 
-    git log --format='%aN' "$*" | sort -ui | sed -e 's/^/- /'
+    git log  --format='- %aN <%aE>' v(current version, e.g. 3.1.0)..(new version, e.g. v4.0.0rc2) | sort -fiu
 
 Tag version (or release candidate) in git
 
-    git tag -s v(new version, e.g. 1.4.34)
+    git tag -s v(new version, e.g. 4.0.0)
 
 ### Setup and perform Gitian builds
 

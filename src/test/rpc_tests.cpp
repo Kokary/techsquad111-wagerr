@@ -12,6 +12,8 @@
 #include "util.h"
 
 #include "test/test_wagerr.h"
+#include "betting/bet.h"
+#include "betting/bet_db.h"
 
 #include <boost/algorithm/string.hpp>
 #include <boost/test/unit_test.hpp>
@@ -203,14 +205,14 @@ BOOST_AUTO_TEST_CASE(rpc_ban)
     ar = r.get_array();
     BOOST_CHECK_EQUAL(ar.size(), 0);
 
-    BOOST_CHECK_NO_THROW(r = CallRPC(std::string("setban 127.0.0.0/24 add 1607731200 true")));
+    BOOST_CHECK_NO_THROW(r = CallRPC(std::string("setban 127.0.0.0/24 add 1902871341 true")));
     BOOST_CHECK_NO_THROW(r = CallRPC(std::string("listbanned")));
     ar = r.get_array();
     o1 = ar[0].get_obj();
     adr = find_value(o1, "address");
     UniValue banned_until = find_value(o1, "banned_until");
     BOOST_CHECK_EQUAL(adr.get_str(), "127.0.0.0/24");
-    BOOST_CHECK_EQUAL(banned_until.get_int64(), 1607731200); // absolute time check
+    BOOST_CHECK_EQUAL(banned_until.get_int64(), 1902871341); // absolute time check
 
     BOOST_CHECK_NO_THROW(CallRPC(std::string("clearbanned")));
 
@@ -270,8 +272,25 @@ BOOST_AUTO_TEST_CASE(rpc_ban)
 
 BOOST_AUTO_TEST_CASE(rpc_bet)
 {
+    auto mapsPath = CBettingDB::MakeDbPath("mappings");
+    auto eventsPath = CBettingDB::MakeDbPath("events");
+    auto resultsPath = CBettingDB::MakeDbPath("results");
+    auto undosPath = CBettingDB::MakeDbPath("undos");
+
+    boost::filesystem::remove_all(mapsPath);
+    boost::filesystem::remove_all(eventsPath);
+    boost::filesystem::remove_all(resultsPath);
+    boost::filesystem::remove_all(undosPath);
+
     BOOST_CHECK_NO_THROW(CallRPC(std::string("getmappingid sports Soccer")));
     BOOST_CHECK_NO_THROW(CallRPC(std::string("getmappingname sports 0")));
+    BOOST_CHECK_NO_THROW(CallRPC(std::string("listbets")));
+    BOOST_CHECK_NO_THROW(CallRPC(std::string("listevents")));
+
+    boost::filesystem::remove_all(mapsPath);
+    boost::filesystem::remove_all(eventsPath);
+    boost::filesystem::remove_all(resultsPath);
+    boost::filesystem::remove_all(undosPath);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
