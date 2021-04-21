@@ -152,6 +152,11 @@ public:
     //! Change to 64-bit type when necessary; won't happen before 2030
     unsigned int nChainTx;
 
+    //! (memory only) Amount of WGR minted and burned in the chain up to and including this block.
+    //! This value will be non-zero only if and only if transactions for this block and all its parents are available.
+    int64_t nChainWGRMinted;
+    int64_t nChainWGRBurned;
+
     //! Verification status of this block. See enum BlockStatus
     unsigned int nStatus;
 
@@ -206,6 +211,9 @@ public:
 
         nMint = 0;
         nMoneySupply = 0;
+        nChainWGRBurned = 0;
+        nChainWGRMinted = 0;
+
         nFlags = 0;
         nStakeModifier = 0;
         nStakeModifierV2 = uint256();

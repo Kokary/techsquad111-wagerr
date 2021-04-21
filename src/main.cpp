@@ -2685,6 +2685,10 @@ void RecalculateZWGRSpent()
     uiInterface.ShowProgress("", 100);
 }
 
+void LogFunc() {
+    LogPrintf("Something weird is happening!\n");
+}
+
 bool RecalculateWGRSupply(int nHeightStart)
 {
     if (nHeightStart > chainActive.Height())
@@ -2694,7 +2698,17 @@ bool RecalculateWGRSupply(int nHeightStart)
     CAmount nSupplyPrev = pindex->pprev->nMoneySupply;
 
     uiInterface.ShowProgress(_("Recalculating WGR supply..."), 0);
+    CAmount nZerocoinMinted = 0;
+    CAmount nZerocoinSpent = 0;
+    CAmount nAccBlockRewards = 0;
+    CAmount nBetPayouts = 0;
+    CAmount nBetAmountV1 = 0;
+    CAmount nBetAmountV2 = 0;
     while (true) {
+        CAmount nBlockReward = GetBlockValue(pindex->nHeight);
+//        CAmount nBlockBet = 0;
+//        CAmount nBlockExtraMinted = 0;
+        nAccBlockRewards += nBlockReward;
         if (pindex->nHeight % 1000 == 0) {
             LogPrintf("%s : block %d...\n", __func__, pindex->nHeight);
             int percent = std::max(1, std::min(99, (int)((double)((pindex->nHeight - nHeightStart) * 100) / (chainActive.Height() - nHeightStart))));
@@ -2707,13 +2721,21 @@ bool RecalculateWGRSupply(int nHeightStart)
         CAmount nValueIn = 0;
         CAmount nValueOut = 0;
         CAmount nValueBurned = 0;
-        for (const CTransaction& tx : block.vtx) {
+
+        for (unsigned int j = 0; j < block.vtx.size(); j++) {
+            const CTransaction& tx = block.vtx[j];
+
+            CAmount nTxValueIn = 0;
+            CAmount nTxValueOut = 0;
+            CAmount nTxValueBurned = 0;
+
             for (unsigned int i = 0; i < tx.vin.size(); i++) {
                 if (tx.IsCoinBase())
                     break;
 
-                if (tx.vin[i].IsZerocoinSpend()) {
-                    nValueIn += tx.vin[i].nSequence * COIN;
+                if (tx.vin[i].IsZerocoinSpend() || tx.vin[i].IsZerocoinPublicSpend()) {
+                    nTxValueIn += tx.vin[i].nSequence * COIN;
+                    nZerocoinSpent += tx.vin[i].nSequence * COIN;
                     continue;
                 }
 
@@ -2721,14 +2743,68 @@ bool RecalculateWGRSupply(int nHeightStart)
                 CTransaction txPrev;
                 uint256 hashBlock;
                 assert(GetTransaction(prevout.hash, txPrev, hashBlock, true));
-                nValueIn += txPrev.vout[prevout.n].nValue;
+                nTxValueIn += txPrev.vout[prevout.n].nValue;
             }
-            tx.AddVoutValues(nValueOut, nValueBurned);
+
+            for (unsigned int i = 0; i < tx.vout.size(); i++) {
+                if (tx.IsCoinBase())
+                    break;
+                
+                if (tx.vout[i].IsZerocoinMint()) {
+                    if (tx.IsCoinStake()) {
+                    }
+                    nZerocoinMinted += tx.vout[i].nValue;
+                }
+
+                if (j > 1 && pindex->nHeight >= 763350) {
+                    auto bettingTx = ParseBettingTx(tx.vout[i]);
+                    if (bettingTx) {
+                        nBetAmountV2 += tx.vout[i].nValue;
+                    }
+                }
+            }
+
+            if (tx.HasZerocoinMintOutputs()) {
+            }
+            tx.AddVoutValues(nTxValueOut, nTxValueBurned);
+
+            if (j == 1 && pindex->nHeight >= 298386 && (nTxValueOut - nTxValueIn) > 3.8) {
+                nBetPayouts += nTxValueOut - nTxValueIn - 3.8;
+            }
+            if (j > 1 && pindex->nHeight >= 298386 && pindex->nHeight < 763350) {
+                nBetAmountV1 += nTxValueBurned;
+            }
+
+
+
+            if (nTxValueOut > nTxValueIn && !tx.IsCoinStake() && !tx.IsCoinBase()) {
+                LogFunc();
+            }
+            nValueIn += nTxValueIn;
+            nValueOut += nTxValueOut;
+            nValueBurned += nTxValueBurned;
         }
 
         // Rewrite money supply
         pindex->nMoneySupply = nSupplyPrev + nValueOut - nValueIn - nValueBurned;
+
+        // track money supply and mint amount info
+        const int64_t nMint = (nValueOut - nValueIn);
+        pindex->nMoneySupply = nSupplyPrev + nValueOut - nValueIn - nValueBurned;
+        pindex->nMint = pindex->nMoneySupply - nSupplyPrev;
+        pindex->nChainWGRBurned = pindex->pprev ? pindex->pprev->nChainWGRBurned + nValueBurned : 0;
+        pindex->nChainWGRMinted = pindex->pprev ? pindex->pprev->nChainWGRMinted + (nValueOut - nValueIn) : 0;
+
         nSupplyPrev = pindex->nMoneySupply;
+
+        LogPrintf("RecalculateWGRSupply: height=%d money_supply=%d mint_surplus=%d bet_payouts=%d bet_amount_v1=%d bet_amount_v2=%d total_minted=%d total_burned=%d zerocoin_minted=%d zerocoin_spent=%d \n",
+            pindex->nHeight,
+            pindex->nMoneySupply,
+            pindex->nMoneySupply - nAccBlockRewards,
+            nBetPayouts, nBetAmountV1, nBetAmountV2,
+            pindex->nChainWGRMinted, pindex->nChainWGRBurned,
+            nZerocoinMinted, nZerocoinSpent
+        );
 
         // Add fraudulent funds to the supply and remove any recovered funds.
         if (pindex->nHeight == Params().Zerocoin_Block_RecalculateAccumulators()) {
@@ -3125,6 +3201,8 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
     CAmount nMoneySupplyPrev = pindex->pprev ? pindex->pprev->nMoneySupply : 0;
     pindex->nMoneySupply = nMoneySupplyPrev + nValueOut - nValueIn - nValueBurned;
     pindex->nMint = pindex->nMoneySupply - nMoneySupplyPrev + nFees;
+    pindex->nChainWGRBurned = pindex->pprev ? pindex->pprev->nChainWGRBurned + nValueBurned : 0;
+    pindex->nChainWGRMinted = pindex->pprev ? pindex->pprev->nChainWGRMinted + (nValueOut - nValueIn) : 0;
 
     int64_t nTime1 = GetTimeMicros();
     nTimeConnect += nTime1 - nTimeStart;
@@ -3366,8 +3444,10 @@ void static UpdateTip(CBlockIndex* pindexNew)
     nTimeBestReceived = GetTime();
     mempool.AddTransactionsUpdated(1);
 
-    LogPrintf("UpdateTip: new best=%s  height=%d version=%d  log2_work=%.8g  tx=%lu  date=%s progress=%f  cache=%u\n",
-        chainActive.Tip()->GetBlockHash().ToString(), chainActive.Height(), chainActive.Tip()->nVersion, log(chainActive.Tip()->nChainWork.getdouble()) / log(2.0), (unsigned long)chainActive.Tip()->nChainTx,
+    LogPrintf("UpdateTip: new best=%s  height=%d version=%d money_supply=%d total_minted=%d total_burned=%d log2_work=%.8g  tx=%lu  date=%s progress=%f  cache=%u\n",
+        chainActive.Tip()->GetBlockHash().ToString(), chainActive.Height(), chainActive.Tip()->nVersion,
+        chainActive.Tip()->nMoneySupply, chainActive.Tip()->nChainWGRMinted, chainActive.Tip()->nChainWGRBurned,
+        log(chainActive.Tip()->nChainWork.getdouble()) / log(2.0), (unsigned long)chainActive.Tip()->nChainTx,
         DateTimeStrFormat("%Y-%m-%d %H:%M:%S", chainActive.Tip()->GetBlockTime()),
         Checkpoints::GuessVerificationProgress(chainActive.Tip()), (unsigned int)pcoinsTip->GetCacheSize());
 
